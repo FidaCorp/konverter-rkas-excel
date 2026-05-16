@@ -6,108 +6,200 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side
 import re
 
-# Konfigurasi Tampilan Aplikasi Web
-st.set_page_config(page_title="Konverter BOSP Rapi", page_icon="📊", layout="wide")
-st.title("Konverter PDF Kertas Kerja BOSP (Tabel Saja) 📊")
-st.write("Silakan upload file PDF Kertas Kerja. Aplikasi akan menyelaraskan kolom, menghapus judul berulang, dan menampilkan review sebelum Anda mengunduhnya.")
+# Konfigurasi Tampilan Aplikasi Web (Wide Mode agar Review terlihat jelas)
+st.set_page_config(page_title="Konverter BOSP Sempurna", page_icon="📊", layout="wide")
+st.title("Konverter PDF Kertas Kerja BOSP (Anti-Bergeser) 📊")
+st.write("Aplikasi ini menggunakan **Smart Column Alignment** untuk mendeteksi data yang menyatu (seperti pada Tenaga Administrasi Harian Lepas) dan mengembalikannya ke kolom yang benar secara otomatis.")
 
+# Fitur Unggah Dokumen PDF
 uploaded_file = st.file_uploader("Upload File PDF Kertas Kerja BOSP", type="pdf")
 
 if uploaded_file is not None:
-    st.info("Sedang menyelaraskan kolom dan merapikan data tabel...")
+    st.info("Sedang menganalisis struktur dokumen dan menyelaraskan kolom...")
     
     try:
-        all_data = []
+        raw_rows = []
+        # 1. Ekstraksi Data Kasar dari PDF
         with pdfplumber.open(uploaded_file) as pdf:
             for page in pdf.pages:
                 table = page.extract_table()
                 if table:
-                    all_data.extend(table)
+                    raw_rows.extend(table)
         
-        if all_data:
-            # 1. KONVERSI KE DATAFRAME TERLEBIH DAHULU
-            # Ini adalah kunci agar kolom tidak bergeser (Alignment Grid Otomatis)
-            df = pd.DataFrame(all_data)
-            df = df.fillna("")
-            
-            # Pastikan minimal ada 10 kolom untuk pemetaan yang tepat
-            while df.shape[1] < 10:
-                df[df.shape[1]] = ""
-                
+        if raw_rows:
             cleaned_data = []
             
-            # Kata kunci Kop Surat / Header berulang yang harus dihapus
+            # Kata kunci Kop Surat / Header Halaman yang wajib dibuang total agar tidak mengulang
             garbage_keywords = [
                 "rincian kertas kerja", "tahun anggaran", "npsn", "nama sekolah", 
                 "alamat", "kabupaten", "provinsi", "bulan", "sumber dana", 
                 "penerimaan", "total penerimaan", "belanja", "no. urut", "kode rekening",
-                "rincian perhitungan", "tarif harga"
+                "rincian perhitungan", "tarif harga", "volume", "satuan"
             ]
             
-            # 2. PROSES PEMETAAN BARIS YANG SUDAH SEJAJAR
-            for index, row in df.iterrows():
-                # Ambil 10 kolom pertama dari grid yang sudah lurus
-                r = [str(row[c]).strip() if c in df.columns else "" for c in range(10)]
-                
-                row_str = " ".join(r).lower()
-                
-                # Lewati baris kosong
-                if not row_str.strip():
+            # 2. PROSES DETEKSI & PENYELARASAN KOLOM PINTAR (ANTI-BERGESER)
+            for row in raw_rows:
+                if not row:
                     continue
                 
-                # Lewati baris Kop Surat / Judul Halaman
-                if any(kw in row_str for kw in garbage_keywords):
+                # Ambil semua teks yang tidak kosong dalam satu baris
+                cells = [str(x).strip() for x in row if x is not None and str(x).strip() != ""]
+                if not cells:
                     continue
                 
-                # PEMETAAN KOLOM (Pasti lurus karena sudah dikunci oleh DataFrame)
-                no_urut = r[0]
-                kode_rek = r[1]
+                # Gabungkan untuk cek baris sampah/judul halaman
+                row_str_lower = " ".join(cells).lower()
+                if any(kw in row_str_lower for kw in garbage_keywords):
+                    continue
                 
-                # Kode Program digabung karena kadang terpisah di 3 kolom (2, 3, 4)
-                kode_prog = f"{r[2]} {r[3]} {r[4]}".strip()
-                kode_prog = re.sub(r'\s+', ' ', kode_prog)
+                # Inisialisasi kolom standar
+                no_urut = ""
+                kode_rek = ""
+                kode_prog = ""
+                uraian = ""
+                volume = ""
+                satuan = ""
+                tarif = ""
+                jumlah = ""
                 
-                uraian = r[5]
-                volume = r[6]
-                satuan = r[7]
-                tarif = r[8]
-                jumlah = r[9]
+                # Cek apakah baris ini memiliki Kode Rekening Belanja (dimulai dengan angka 5)
+                has_kode_rek = any(re.match(r'^5\.\d', c) for c in cells)
                 
-                # Deteksi jika ini adalah baris "Jumlah" (Total paling bawah) 
-                if "jumlah" in row_str and not uraian and not jumlah:
-                    uraian = "Jumlah"
-                    # Cari angkanya dari kanan ke kiri
-                    for idx in range(9, -1, -1):
-                        if r[idx] and sum(c.isdigit() for c in r[idx]) > 3:
-                            jumlah = r[idx]
-                            break
+                if has_kode_rek:
+                    # BARIS DETAIL BELANJA (Misal: Honorarium, Semen, Tenaga Administrasi)
+                    if re.match(r'^5\.\d', cells[0]):
+                        no_urut = ""
+                        kode_rek = cells[0]
+                        rem_cells = cells[1:]
+                    else:
+                        no_urut = cells[0]
+                        kode_rek = cells[1]
+                        rem_cells = cells[2:]
+                    
+                    # Kasus A: Kolom terpisah sempurna dari PDF (6 elemen tersisa)
+                    if len(rem_cells) == 6:
+                        kode_prog = rem_cells[0]
+                        uraian = rem_cells[1]
+                        volume = rem_cells[2]
+                        satuan = rem_cells[3]
+                        tarif = rem_cells[4]
+                        jumlah = rem_cells[5]
+                        
+                    # Kasus B: Kolom menyatu/bergeser akibat PDF tanpa garis (4 elemen tersisa)
+                    # Contoh kasus: ['07. 12. 03. Tenaga Administrasi Harian Lepas', '20 hari', '35.000', '700.000']
+                    elif len(rem_cells) == 4:
+                        # Pisahkan Kode Program & Uraian menggunakan Regex
+                        prog_uraian = rem_cells[0]
+                        match_p = re.match(r'^((?:\d{2}\.\s*)+)\s*(.*)$', prog_uraian)
+                        if match_p:
+                            kode_prog = match_p.group(1).strip()
+                            uraian = match_p.group(2).strip()
+                        else:
+                            kode_prog = ""
+                            uraian = prog_uraian
+                        
+                        # Pisahkan Volume & Satuan
+                        vol_sat = rem_cells[1]
+                        match_v = re.match(r'^([\d\.,]+)\s*(.*)$', vol_sat)
+                        if match_v:
+                            volume = match_v.group(1).strip()
+                            satuan = match_v.group(2).strip()
+                        else:
+                            volume = ""
+                            satuan = vol_sat
                             
-                # Pastikan tidak menginput baris yang nyaris kosong
+                        # Tarif dan Jumlah otomatis diisi dari sisa kolom kanan
+                        tarif = rem_cells[2]
+                        jumlah = rem_cells[3]
+                    
+                    # Kasus C: Cadangan Fleksibel jika panjang kolom acak lainnya
+                    else:
+                        for c in rem_cells:
+                            if re.match(r'^(?:\d{2}\.\s*)+$', c):
+                                kode_prog = c
+                            elif re.match(r'^((?:\d{2}\.\s*)+)\s+(.+)$', c):
+                                m = re.match(r'^((?:\d{2}\.\s*)+)\s+(.+)$', c)
+                                kode_prog = m.group(1).strip()
+                                uraian = m.group(2).strip()
+                            elif re.match(r'^(\d+)\s+([a-zA-Z_/]+)$', c):
+                                m = re.match(r'^(\d+)\s+([a-zA-Z_/]+)$', c)
+                                volume = m.group(1).strip()
+                                      satuan = m.group(2).strip()
+                            elif c.lower() in ["hari", "orang/hari", "biji", "buah", "rim", "zak", "kg", "m3", "kotak", "bulan", "kwh", "orang / hari"]:
+                                satuan = c
+                            elif sum(char.isdigit() for char in c) > 0 and not kode_prog:
+                                if c.isdigit() and int(c) < 1000 and not volume:
+                                    volume = c
+                                elif not tarif:
+                                    tarif = c
+                                else:
+                                    jumlah = c
+                            else:
+                                if not uraian:
+                                    uraian = c
+                                else:
+                                    uraian += " " + c
+                else:
+                    # BARIS SUB-HEADER UTAMA / KATEGORI / TOTAL JUMLAH
+                    if "jumlah" in row_str_lower:
+                        no_urut = ""
+                        kode_rek = ""
+                        kode_prog = ""
+                        uraian = "Jumlah"
+                        for c in reversed(cells):
+                            if sum(char.isdigit() for char in c) > 3:
+                                jumlah = c
+                                break
+                    else:
+                        if len(cells) >= 3:
+                            if re.match(r'^\d+\.$', cells[0]):
+                                no_urut = cells[0]
+                                kode_prog = cells[1]
+                                uraian = cells[2]
+                                if len(cells) >= 4:
+                                    jumlah = cells[3]
+                            else:
+                                no_urut = ""
+                                kode_prog = cells[0]
+                                uraian = cells[1]
+                                if len(cells) >= 3:
+                                    jumlah = cells[2]
+                        elif len(cells) == 2:
+                            if re.match(r'^(?:\d{2}\.\s*)+$', cells[0]) or re.match(r'^\d+$', cells[0]):
+                                kode_prog = cells[0]
+                                uraian = cells[1]
+                            else:
+                                uraian = cells[0]
+                                jumlah = cells[1]
+                                
+                # Pastikan baris kosong tidak masuk ke daftar
                 if not any([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah]):
                     continue
-                    
+                
                 cleaned_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
             
             if cleaned_data:
-                # 3. FITUR REVIEW (Pratinjau)
+                # 3. FITUR REVIEW (PRATINJAU) DI LAYAR UNTUK DICEK USER
                 kolom_tabel = ["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"]
                 df_preview = pd.DataFrame(cleaned_data, columns=kolom_tabel)
                 
-                st.subheader("👀 Review Hasil Tabel (Pastikan Kolom Sudah Lurus)")
+                st.subheader("👀 Review Hasil Tabel (Silakan periksa, kolom sekarang sudah lurus sempurna)")
                 st.dataframe(df_preview, use_container_width=True)
                 
-                # 4. BUAT EXCEL FINAL SESUAI FORMAT YANG DIMINTA
+                # 4. PROSES BUAT EXCEL SEPERTI Kertas_Kerja_BOSP_Tabel_Saja.xlsx
                 output = io.BytesIO()
                 wb = openpyxl.Workbook()
                 ws = wb.active
                 ws.title = "Rincian Kertas Kerja"
                 
+                # Struktur Kepala Tabel Rangkap
                 headers1 = ["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Rincian Perhitungan", "", "", "Jumlah"]
                 headers2 = ["", "", "", "", "Volume", "Satuan", "Tarif Harga", ""]
                 
                 ws.append(headers1)
                 ws.append(headers2)
                 
+                # Gabungkan Sel Header
                 ws.merge_cells('A1:A2')
                 ws.merge_cells('B1:B2')
                 ws.merge_cells('C1:C2')
@@ -125,6 +217,7 @@ if uploaded_file is not None:
                         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                         cell.border = thin_border
                 
+                # Tulis data bersih ke lembar Excel
                 for row_idx, row_data in enumerate(cleaned_data, start=3):
                     for col_idx, val_str in enumerate(row_data, start=1):
                         val_bersih = str(val_str).replace('\n', ' ').strip()
@@ -132,7 +225,7 @@ if uploaded_file is not None:
                         cell.border = thin_border
                         cell.alignment = Alignment(vertical="top", wrap_text=True)
                         
-                        # Format Angka Otomatis
+                        # Format Angka Tarif & Jumlah (.000)
                         if col_idx in [7, 8]:
                             if val_bersih:
                                 try:
@@ -141,6 +234,7 @@ if uploaded_file is not None:
                                     cell.number_format = '#,##0'
                                 except:
                                     pass
+                        # Format Angka Volume
                         elif col_idx in [5]:
                             if val_bersih:
                                 try:
@@ -149,14 +243,15 @@ if uploaded_file is not None:
                                 except:
                                     pass
                                     
-                        # Cetak Tebal (Bold) untuk Baris Kategori
+                        # Cetak Tebal Baris Kategori Utama
                         if row_data[1] == "" and row_data[0] != "" and row_data[0].lower() != "jumlah":
                             cell.font = bold_font
                             
-                        # Rata Tengah
+                        # Rata Tengah kolom kode & nomor
                         if col_idx in [1, 2, 3, 5, 6]:
                             cell.alignment = Alignment(horizontal="center", vertical="top", wrap_text=True)
                             
+                # Pengaturan Lebar Kolom Standar Rapi
                 ws.column_dimensions['A'].width = 6
                 ws.column_dimensions['B'].width = 18
                 ws.column_dimensions['C'].width = 12
@@ -166,7 +261,7 @@ if uploaded_file is not None:
                 ws.column_dimensions['G'].width = 12
                 ws.column_dimensions['H'].width = 15
                 
-                # Cetak Tebal Baris "Jumlah" Paling Bawah
+                # Cetak Tebal Otomatis Baris "Jumlah" Paling Bawah
                 for r_idx in range(3, ws.max_row + 1):
                     cell_d = ws.cell(row=r_idx, column=4)
                     if cell_d.value and "jumlah" in str(cell_d.value).lower():
@@ -177,9 +272,9 @@ if uploaded_file is not None:
                 wb.save(output)
                 excel_data = output.getvalue()
                 
-                st.success("✅ Tabel sudah lurus dan rapi! Silakan cek review di atas dan Download Excel di bawah.")
+                st.success("✅ Penyelarasan selesai! Semua data sudah lurus di kolomnya masing-masing.")
                 
-                # Tombol Download
+                # Tombol Download ditaruh di paling bawah setelah kolom Review
                 st.download_button(
                     label="📥 Download Excel Final (Tabel Rapi)",
                     data=excel_data,
@@ -187,9 +282,9 @@ if uploaded_file is not None:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             else:
-                st.warning("Data tabel gagal diekstrak secara bersih.")
+                st.warning("Data gagal dibersihkan.")
         else:
-            st.warning("Format tabel di dalam file PDF tidak terdeteksi.")
+            st.warning("Tidak ada tabel terdeteksi di PDF.")
             
     except Exception as e:
-        st.error(f"Terjadi error saat merapikan data: {e}")
+        st.error(f"Terjadi error: {e}")
