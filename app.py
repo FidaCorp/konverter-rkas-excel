@@ -11,7 +11,7 @@ st.set_page_config(page_title="Konverter BOSP Rapi", page_icon="📊", layout="w
 st.title("Konverter PDF Kertas Kerja BOSP (Tabel Saja) 📊")
 st.write("Silakan upload file PDF Kertas Kerja. Aplikasi akan otomatis menghapus judul halaman yang berulang, merapikan kolom, dan menampilkan review sebelum Anda mengunduhnya.")
 
-# Fitur Unggah Dokumen PDF
+# Fitur固定 Unggah Dokumen PDF
 uploaded_file = st.file_uploader("Upload File PDF Kertas Kerja BOSP", type="pdf")
 
 if uploaded_file is not None:
@@ -136,7 +136,7 @@ if uploaded_file is not None:
                                     num_val = float(val_bersih.replace('.', '').replace(',', ''))
                                     cell.value = num_val
                                     cell.number_format = '#,##0'
-                                ] except:
+                                except:
                                     pass
                         # Format Angka Volume
                         elif col_idx in [5]:
