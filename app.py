@@ -9,92 +9,99 @@ import re
 # Konfigurasi Tampilan Aplikasi Web
 st.set_page_config(page_title="Konverter BOSP Rapi", page_icon="📊", layout="wide")
 st.title("Konverter PDF Kertas Kerja BOSP (Tabel Saja) 📊")
-st.write("Silakan upload file PDF Kertas Kerja. Aplikasi akan otomatis menghapus judul halaman yang berulang, merapikan kolom, dan menampilkan review sebelum Anda mengunduhnya.")
+st.write("Silakan upload file PDF Kertas Kerja. Aplikasi akan menyelaraskan kolom, menghapus judul berulang, dan menampilkan review sebelum Anda mengunduhnya.")
 
-# Fitur固定 Unggah Dokumen PDF
 uploaded_file = st.file_uploader("Upload File PDF Kertas Kerja BOSP", type="pdf")
 
 if uploaded_file is not None:
-    st.info("Sedang memproses, menyaring, dan merapikan data tabel...")
+    st.info("Sedang menyelaraskan kolom dan merapikan data tabel...")
     
     try:
-        raw_rows = []
-        # 1. Ekstraksi Data Kasar dari PDF
+        all_data = []
         with pdfplumber.open(uploaded_file) as pdf:
             for page in pdf.pages:
                 table = page.extract_table()
                 if table:
-                    raw_rows.extend(table)
+                    all_data.extend(table)
         
-        if raw_rows:
+        if all_data:
+            # 1. KONVERSI KE DATAFRAME TERLEBIH DAHULU
+            # Ini adalah kunci agar kolom tidak bergeser (Alignment Grid Otomatis)
+            df = pd.DataFrame(all_data)
+            df = df.fillna("")
+            
+            # Pastikan minimal ada 10 kolom untuk pemetaan yang tepat
+            while df.shape[1] < 10:
+                df[df.shape[1]] = ""
+                
             cleaned_data = []
             
-            # Kata kunci sampah atau judul halaman berulang yang harus dihilangkan total
+            # Kata kunci Kop Surat / Header berulang yang harus dihapus
             garbage_keywords = [
                 "rincian kertas kerja", "tahun anggaran", "npsn", "nama sekolah", 
                 "alamat", "kabupaten", "provinsi", "bulan", "sumber dana", 
                 "penerimaan", "total penerimaan", "belanja", "no. urut", "kode rekening",
-                "rincian perhitungan", "tarif harga", "no. urut"
+                "rincian perhitungan", "tarif harga"
             ]
             
-            # 2. Proses Pembersihan dan Penyelarasan Kolom
-            for row in raw_rows:
-                if not row:
+            # 2. PROSES PEMETAAN BARIS YANG SUDAH SEJAJAR
+            for index, row in df.iterrows():
+                # Ambil 10 kolom pertama dari grid yang sudah lurus
+                r = [str(row[c]).strip() if c in df.columns else "" for c in range(10)]
+                
+                row_str = " ".join(r).lower()
+                
+                # Lewati baris kosong
+                if not row_str.strip():
                     continue
                 
-                # Menggabungkan seluruh baris menjadi satu teks kecil untuk pengecekan kata kunci sampah
-                row_str = " ".join([str(x) for x in row if x is not None]).lower()
-                
-                # JIKA baris mengandung kata kunci judul/kop, langsung dilewati (dihapus)
+                # Lewati baris Kop Surat / Judul Halaman
                 if any(kw in row_str for kw in garbage_keywords):
                     continue
                 
-                # Pastikan jumlah kolom minimal ada 10 agar pemetaan indeks tidak bergeser
-                if len(row) < 10:
-                    row = row + [""] * (10 - len(row))
+                # PEMETAAN KOLOM (Pasti lurus karena sudah dikunci oleh DataFrame)
+                no_urut = r[0]
+                kode_rek = r[1]
                 
-                # Hilangkan nilai None/kosong menjadi teks bersih
-                row = ["" if x is None else str(x).strip() for x in row]
+                # Kode Program digabung karena kadang terpisah di 3 kolom (2, 3, 4)
+                kode_prog = f"{r[2]} {r[3]} {r[4]}".strip()
+                kode_prog = re.sub(r'\s+', ' ', kode_prog)
                 
-                no_urut = row[0]
-                kode_rek = row[1]
+                uraian = r[5]
+                volume = r[6]
+                satuan = r[7]
+                tarif = r[8]
+                jumlah = r[9]
                 
-                # Menggabungkan Kode Program dari pembacaan kolom indeks 2, 3, dan 4 yang berantakan
-                kode_prog = f"{row[2]} {row[3]} {row[4]}".strip()
-                kode_prog = re.sub(r'\s+', ' ', kode_prog) # Rapikan spasi ganda
-                
-                uraian = row[5]
-                volume = row[6]
-                satuan = row[7]
-                tarif = row[8]
-                jumlah = row[9]
-                
-                # Skip jika baris benar-benar kosong total tanpa ada isi apa pun
+                # Deteksi jika ini adalah baris "Jumlah" (Total paling bawah) 
+                if "jumlah" in row_str and not uraian and not jumlah:
+                    uraian = "Jumlah"
+                    # Cari angkanya dari kanan ke kiri
+                    for idx in range(9, -1, -1):
+                        if r[idx] and sum(c.isdigit() for c in r[idx]) > 3:
+                            jumlah = r[idx]
+                            break
+                            
+                # Pastikan tidak menginput baris yang nyaris kosong
                 if not any([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah]):
                     continue
-                
-                # Skip jika baris sisa yang tidak berguna ikut terbaca
-                if uraian.lower() in ["uraian", ""] and jumlah == "" and kode_rek == "":
-                    continue
-                
-                # Masukkan data yang sudah lurus dan bersih ke list final
+                    
                 cleaned_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
             
             if cleaned_data:
-                # 3. MEMBUAT DATAFRAME UNTUK FITUR REVIEW (PRATINJAU) Di LAYAR
+                # 3. FITUR REVIEW (Pratinjau)
                 kolom_tabel = ["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"]
                 df_preview = pd.DataFrame(cleaned_data, columns=kolom_tabel)
                 
-                st.subheader("👀 Review Hasil Tabel (Silakan Cek Terlebih Dahulu)")
+                st.subheader("👀 Review Hasil Tabel (Pastikan Kolom Sudah Lurus)")
                 st.dataframe(df_preview, use_container_width=True)
                 
-                # 4. PROSES GENERATE FILE EXCEL FINAL (Sama seperti Kertas_Kerja_BOSP_Tabel_Saja.xlsx)
+                # 4. BUAT EXCEL FINAL SESUAI FORMAT YANG DIMINTA
                 output = io.BytesIO()
                 wb = openpyxl.Workbook()
                 ws = wb.active
                 ws.title = "Rincian Kertas Kerja"
                 
-                # Susun struktur kepala tabel rangkap (Merge header)
                 headers1 = ["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Rincian Perhitungan", "", "", "Jumlah"]
                 headers2 = ["", "", "", "", "Volume", "Satuan", "Tarif Harga", ""]
                 
@@ -105,57 +112,51 @@ if uploaded_file is not None:
                 ws.merge_cells('B1:B2')
                 ws.merge_cells('C1:C2')
                 ws.merge_cells('D1:D2')
-                ws.merge_cells('E1:G1') # Gabungkan judul Rincian Perhitungan
+                ws.merge_cells('E1:G1')
                 ws.merge_cells('H1:H2')
                 
                 thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
                 bold_font = Font(bold=True)
                 
-                # Desain style untuk Kepala Tabel (Header)
-                for r in range(1, 3):
-                    for c in range(1, 9):
-                        cell = ws.cell(row=r, column=c)
+                for r_idx in range(1, 3):
+                    for c_idx in range(1, 9):
+                        cell = ws.cell(row=r_idx, column=c_idx)
                         cell.font = bold_font
                         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                         cell.border = thin_border
                 
-                # Memasukkan isi data ke lembar Excel
                 for row_idx, row_data in enumerate(cleaned_data, start=3):
                     for col_idx, val_str in enumerate(row_data, start=1):
-                        # Hilangkan enter di dalam sel agar teks lurus satu baris
                         val_bersih = str(val_str).replace('\n', ' ').strip()
-                        
                         cell = ws.cell(row=row_idx, column=col_idx, value=val_bersih)
                         cell.border = thin_border
                         cell.alignment = Alignment(vertical="top", wrap_text=True)
                         
-                        # Format Angka Tarif Harga & Jumlah Uang otomatis (.000)
+                        # Format Angka Otomatis
                         if col_idx in [7, 8]:
-                            if val_bersih and val_bersih != "":
+                            if val_bersih:
                                 try:
                                     num_val = float(val_bersih.replace('.', '').replace(',', ''))
                                     cell.value = num_val
                                     cell.number_format = '#,##0'
                                 except:
                                     pass
-                        # Format Angka Volume
                         elif col_idx in [5]:
-                            if val_bersih and val_bersih != "":
+                            if val_bersih:
                                 try:
                                     num_val = int(val_bersih)
                                     cell.value = num_val
                                 except:
                                     pass
                                     
-                        # Menebalkan otomatis baris Kategori Standar/Kegiatan utama
-                        if row_data[1] == "" and row_data[0] != "":
+                        # Cetak Tebal (Bold) untuk Baris Kategori
+                        if row_data[1] == "" and row_data[0] != "" and row_data[0].lower() != "jumlah":
                             cell.font = bold_font
                             
-                        # Format rata tengah untuk nomor dan kode program
+                        # Rata Tengah
                         if col_idx in [1, 2, 3, 5, 6]:
                             cell.alignment = Alignment(horizontal="center", vertical="top", wrap_text=True)
                             
-                # Mengatur Ukuran Lebar Kolom Excel secara presisi
                 ws.column_dimensions['A'].width = 6
                 ws.column_dimensions['B'].width = 18
                 ws.column_dimensions['C'].width = 12
@@ -165,21 +166,20 @@ if uploaded_file is not None:
                 ws.column_dimensions['G'].width = 12
                 ws.column_dimensions['H'].width = 15
                 
-                # Deteksi otomatis baris Total "Jumlah" paling bawah untuk ditebalkan hurufnya
+                # Cetak Tebal Baris "Jumlah" Paling Bawah
                 for r_idx in range(3, ws.max_row + 1):
                     cell_d = ws.cell(row=r_idx, column=4)
-                    if cell_d.value and "Jumlah" in str(cell_d.value):
+                    if cell_d.value and "jumlah" in str(cell_d.value).lower():
                         cell_d.font = bold_font
                         cell_d.alignment = Alignment(horizontal="right", vertical="center")
                         ws.cell(row=r_idx, column=8).font = bold_font
                 
-                # Simpan workbook Excel ke dalam memori aplikasi
                 wb.save(output)
                 excel_data = output.getvalue()
                 
-                st.success("✅ Pembersihan sukses! Silakan lihat preview di atas sebelum men-download.")
+                st.success("✅ Tabel sudah lurus dan rapi! Silakan cek review di atas dan Download Excel di bawah.")
                 
-                # 5. TOMBOL DOWNLOAD DI TARUH DI PALING BAWAH SETELAH REVIEW
+                # Tombol Download
                 st.download_button(
                     label="📥 Download Excel Final (Tabel Rapi)",
                     data=excel_data,
