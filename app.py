@@ -124,7 +124,7 @@ if uploaded_file is not None:
                             elif re.match(r'^(\d+)\s+([a-zA-Z_/]+)$', c):
                                 m = re.match(r'^(\d+)\s+([a-zA-Z_/]+)$', c)
                                 volume = m.group(1).strip()
-                                      satuan = m.group(2).strip()
+                                satuan = m.group(2).strip()
                             elif c.lower() in ["hari", "orang/hari", "biji", "buah", "rim", "zak", "kg", "m3", "kotak", "bulan", "kwh", "orang / hari"]:
                                 satuan = c
                             elif sum(char.isdigit() for char in c) > 0 and not kode_prog:
