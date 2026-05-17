@@ -35,10 +35,10 @@ with st.sidebar:
     📊 **MODE CSV/EXCEL KOTOR:**
     Rapikan file Excel/CSV (hasil *convert* aplikasi lain). 
     """)
-    st.info("⚡ **Sistem Cerdas:** Formula Jumlah Otomatis kini telah disempurnakan. Kebal terhadap perbedaan format ribuan (Titik/Koma) dan aman untuk belanja tanpa volume (Lumpsum).")
+    st.info("⚡ **Super Akurat:** Formula Jumlah Otomatis kini menggunakan kuncian Kode Belanja ('5*') untuk mencegah perhitungan ganda pada baris judul yang memiliki spasi tersembunyi.")
 
 # ==========================================
-# 3. FUNGSI MERAPIKAN EXCEL DENGAN FORMULA CERDAS
+# 3. FUNGSI MERAPIKAN EXCEL DENGAN FORMULA "5*"
 # ==========================================
 def create_styled_excel(cleaned_data):
     output = io.BytesIO()
@@ -77,38 +77,37 @@ def create_styled_excel(cleaned_data):
             cell.border = thin_border
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             
-            # --- PEMBACA ANGKA INDONESIA (ANTI-ERROR) ---
+            # Pembaca Angka Cerdas
             if col_idx in [5, 7, 8] and val_bersih:
                 try:
-                    # Buang spasi/Rp, hapus titik pemisah ribuan, ganti koma desimal jadi titik mesin
                     num_str = val_bersih.replace('Rp', '').replace(' ', '')
                     num_str = num_str.replace('.', '').replace(',', '.')
                     num_val = float(num_str)
                     
-                    if col_idx == 5: # Volume
+                    if col_idx == 5: 
                         cell.value = num_val
-                    elif col_idx == 7: # Tarif Harga
+                    elif col_idx == 7: 
                         cell.value = num_val
                         cell.number_format = '#,##0'
-                    elif col_idx == 8: # Kolom Jumlah
+                    elif col_idx == 8: 
                         if is_grand_total:
-                            cell.value = f'=SUMIF(B3:B{row_idx-1}, "?*", H3:H{row_idx-1})'
-                        elif row_data[1]: # Jika ini baris Barang (Ada Kode Rekening)
-                            # Berikan rumus HANYA JIKA volume dan tarif ada isinya
+                            # FORMULA BARU: Hanya jumlahkan baris yang Kode Rekeningnya berawalan "5"
+                            cell.value = f'=SUMIF(B3:B{row_idx-1}, "5*", H3:H{row_idx-1})'
+                        elif row_data[1]: 
                             if row_data[4] and row_data[6]:
                                 cell.value = f"=E{row_idx}*G{row_idx}"
                             else:
-                                cell.value = num_val # Lumpsum aman tanpa nol
-                        else: # Kategori/Sub-Kategori
+                                cell.value = num_val 
+                        else:
                             cell.value = num_val
                             
                         cell.number_format = '#,##0'
                 except:
                     pass
             
-            # Garansi Formula Total Utama tertulis
+            # Memastikan Baris Paling Bawah Pasti Mendapat Formula Akurat
             if is_grand_total and col_idx == 8:
-                cell.value = f'=SUMIF(B3:B{row_idx-1}, "?*", H3:H{row_idx-1})'
+                cell.value = f'=SUMIF(B3:B{row_idx-1}, "5*", H3:H{row_idx-1})'
                 cell.number_format = '#,##0'
                 
             if not row_data[1] and row_data[0] != "Jumlah" and row_data[3].lower() != "jumlah":
@@ -250,7 +249,7 @@ with tab2:
     uploaded_csv = st.file_uploader("📂 Upload File CSV atau Excel yang Kotor", type=["csv", "xlsx", "xls"], key="csv_uploader")
     
     if uploaded_csv is not None:
-        with st.spinner("⏳ Menata ulang kolom dan memulihkan kode yang dirusak format tanggal..."):
+        with st.spinner("⏳ Menata ulang kolom dan menanamkan Formula Total Akurat..."):
             try:
                 if uploaded_csv.name.endswith('.csv'): df_raw = pd.read_csv(uploaded_csv, header=None)
                 else: df_raw = pd.read_excel(uploaded_csv, header=None)
@@ -330,7 +329,7 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Tabel berhasil dirapikan! Kode tanggal dipulihkan, dan Formula siap. ({len(cleaned_csv_data)} baris)")
+                    st.success(f"✅ Tabel berhasil dirapikan! Formula Total terbaru telah siap. ({len(cleaned_csv_data)} baris)")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
                     
