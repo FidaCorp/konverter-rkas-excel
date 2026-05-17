@@ -9,9 +9,14 @@ import json
 import os
 
 # ==========================================
-# 1. KONFIGURASI TAMPILAN HALAMAN
+# 1. KONFIGURASI TAMPILAN HALAMAN & MEMORI
 # ==========================================
 st.set_page_config(page_title="Konverter RKAS BOSP", page_icon="🏫", layout="wide")
+
+# Inisialisasi Memori untuk menyimpan file unduhan agar tidak hilang
+if 'processed_excel' not in st.session_state:
+    st.session_state.processed_excel = None
+    st.session_state.processed_filename = ""
 
 st.markdown("""
     <style>
@@ -32,9 +37,7 @@ def load_links():
         try:
             with open(LINKS_FILE, "r") as f:
                 return json.load(f)
-        except:
-            pass
-    # Default link jika file belum ada
+        except: pass
     return {"Aplikasi Utama RKAS Manual": "https://script.google.com/macros/s/AKfycbzxWVN-UBAf-VimxCFg4CPgWhRu6pqpy0qlzSrWJEja44mvnVZE1c680fQnuohQLYMo/exec"}
 
 def save_links(links):
@@ -53,13 +56,12 @@ with st.sidebar:
     st.markdown("""
     Pilih jenis dokumen yang ingin Anda rapikan:
     
-    📄 **MODE PDF (Standar):**
-    Ubah PDF Kertas Kerja BOSP langsung menjadi format Excel rapi.
-    
-    📊 **MODE CSV/EXCEL KOTOR:**
-    Rapikan file Excel/CSV (hasil *convert* aplikasi lain). 
+    📄 **MODE PDF:** Ubah PDF langsung ke Excel.
+    📊 **MODE CSV:** Rapikan file CSV yang berantakan.
     """)
-    st.info("⚡ **Sistem Dinamis:** Link portal sekarang dikelola otomatis melalui sistem Admin.")
+    
+    # --- TEMPAT NAVIGASI UNDUHAN (Akan diisi di akhir proses) ---
+    download_section = st.empty()
     
     # --- MENAMPILKAN SEMUA LINK ---
     st.divider()
@@ -71,7 +73,6 @@ with st.sidebar:
     
     # --- PORTAL ADMIN (KELOLA LINK) ---
     with st.expander("⚙️ Portal Admin (Kelola Link)"):
-        # Anda bisa mengubah password "admin123" di bawah ini sesuai keinginan Anda
         admin_pwd = st.text_input("Masukkan Password Admin", type="password")
         if admin_pwd == "admin123":
             st.success("Akses Diberikan!")
@@ -86,8 +87,7 @@ with st.sidebar:
                     save_links(st.session_state.app_links)
                     st.success(f"Link '{new_name}' tersimpan!")
                     st.rerun()
-                else:
-                    st.error("Nama dan URL tidak boleh kosong.")
+                else: st.error("Nama dan URL tidak boleh kosong.")
             
             st.markdown("---")
             st.markdown("**2. Hapus Link Lama**")
@@ -139,10 +139,8 @@ def create_styled_excel(cleaned_data):
         for col_idx, val_str in enumerate(row_data, start=1):
             val_bersih = str(val_str).replace('\n', ' ').strip()
             
-            if not val_bersih:
-                cell = ws.cell(row=row_idx, column=col_idx, value=None)
-            else:
-                cell = ws.cell(row=row_idx, column=col_idx, value=val_bersih)
+            if not val_bersih: cell = ws.cell(row=row_idx, column=col_idx, value=None)
+            else: cell = ws.cell(row=row_idx, column=col_idx, value=val_bersih)
                 
             cell.border = thin_border
             cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -153,8 +151,7 @@ def create_styled_excel(cleaned_data):
                     num_str = num_str.replace('.', '').replace(',', '.')
                     num_val = float(num_str)
                     
-                    if col_idx == 5: 
-                        cell.value = num_val
+                    if col_idx == 5: cell.value = num_val
                     elif col_idx == 7: 
                         cell.value = num_val
                         cell.number_format = '#,##0'
@@ -309,10 +306,14 @@ with tab1:
                         df_preview = pd.DataFrame(cleaned_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                         st.dataframe(df_preview, use_container_width=True, height=350)
                         
-                        excel_data = create_styled_excel(cleaned_data)
+                        # Simpan ke Memori
+                        st.session_state.processed_excel = create_styled_excel(cleaned_data)
+                        st.session_state.processed_filename = "RKAS_BOSP_PDF_Rapi.xlsx"
+                        
                         st.divider()
                         col1, col2, col3 = st.columns([1, 2, 1])
-                        with col2: st.download_button("📥 DOWNLOAD EXCEL FINAL SEKARANG", data=excel_data, file_name="RKAS_BOSP_PDF_Rapi.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+                        with col2: 
+                            st.info("👈 File siap! Silakan klik tombol 'DOWNLOAD EXCEL FINAL' di Navigasi Kiri (Pusat Unduhan).")
                     else: st.warning("Data tabel kosong.")
                 else: st.warning("Gagal membaca isi tabel pada PDF.")
             except Exception as e: st.error(f"Error pada sistem: {e}")
@@ -332,7 +333,6 @@ with tab2:
                 
                 df_raw = df_raw.fillna("").astype(str)
                 cleaned_csv_data = []
-                
                 table_started = False 
                 
                 for index, row in df_raw.iterrows():
@@ -407,9 +407,32 @@ with tab2:
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
                     
-                    excel_data_csv = create_styled_excel(cleaned_csv_data)
+                    # Simpan ke Memori
+                    st.session_state.processed_excel = create_styled_excel(cleaned_csv_data)
+                    st.session_state.processed_filename = "RKAS_BOSP_Dari_CSV_Rapi.xlsx"
+                    
                     st.divider()
                     col1, col2, col3 = st.columns([1, 2, 1])
-                    with col2: st.download_button("📥 DOWNLOAD EXCEL FINAL SEKARANG", data=excel_data_csv, file_name="RKAS_BOSP_Dari_CSV_Rapi.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+                    with col2: 
+                        st.info("👈 File siap! Silakan klik tombol 'DOWNLOAD EXCEL FINAL' di Navigasi Kiri (Pusat Unduhan).")
                 else: st.warning("Gagal menyaring data. Pastikan format dokumennya mirip Kertas Kerja.")
             except Exception as e: st.error(f"Terjadi kesalahan saat memproses CSV/Excel: {e}")
+
+# ==========================================
+# 6. MENGISI PLACEHOLDER PUSAT UNDUHAN DI SIDEBAR
+# ==========================================
+with download_section.container():
+    st.divider()
+    st.markdown("### 📥 Pusat Unduhan")
+    if st.session_state.get('processed_excel'):
+        st.success("🎉 File Excel sudah jadi!")
+        st.download_button(
+            label="⬇️ DOWNLOAD EXCEL FINAL",
+            data=st.session_state.processed_excel,
+            file_name=st.session_state.processed_filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            type="primary"
+        )
+    else:
+        st.info("Upload dan proses dokumen untuk memunculkan tombol unduh di sini.")
