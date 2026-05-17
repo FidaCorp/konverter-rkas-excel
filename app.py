@@ -35,9 +35,10 @@ with st.sidebar:
     📊 **MODE CSV/EXCEL KOTOR:**
     Rapikan file Excel/CSV (hasil *convert* aplikasi lain). Sistem ini dilengkapi pemulih otomatis jika Kode Program dirusak menjadi format tanggal oleh Excel.
     """)
+    st.info("⚡ **Baru:** Excel hasil unduhan kini dilengkapi **Formula Otomatis** pada kolom Jumlah.")
 
 # ==========================================
-# 3. FUNGSI MERAPIKAN EXCEL (CORE FUNCTION)
+# 3. FUNGSI MERAPIKAN EXCEL DENGAN FORMULA
 # ==========================================
 def create_styled_excel(cleaned_data):
     output = io.BytesIO()
@@ -74,14 +75,41 @@ def create_styled_excel(cleaned_data):
             cell.border = thin_border
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             
-            if col_idx in [7, 8] and val_bersih:
+            # --- INJEKSI FORMAT DAN FORMULA EXCEL OTOMATIS ---
+            
+            # Kolom 5 (Volume)
+            if col_idx == 5 and val_bersih:
+                try: cell.value = float(val_bersih.replace(',', '.'))
+                except: pass
+                
+            # Kolom 7 (Tarif Harga)
+            elif col_idx == 7 and val_bersih:
                 try:
                     cell.value = float(val_bersih.replace('.', '').replace(',', ''))
                     cell.number_format = '#,##0'
                 except: pass
-            elif col_idx in [5] and val_bersih:
-                try: cell.value = float(val_bersih.replace(',', '.'))
-                except: pass
+                
+            # Kolom 8 (Jumlah)
+            elif col_idx == 8 and val_bersih:
+                # KONDISI A: Baris Total "Jumlah" paling bawah
+                if "jumlah" in str(row_data[3]).lower() or "jumlah" in str(row_data[0]).lower():
+                    # SUM pintar: Menjumlahkan sel H jika sel B (Kode Rekening) tidak kosong
+                    cell.value = f'=SUMIF(B3:B{row_idx-1}, "?*", H3:H{row_idx-1})'
+                    cell.number_format = '#,##0'
+                    
+                # KONDISI B: Baris Rincian Belanja (Ada Volume dan Tarif)
+                elif row_data[4] and row_data[6] and row_data[1]:
+                    # Formula Volume x Tarif
+                    cell.value = f"=E{row_idx}*G{row_idx}"
+                    cell.number_format = '#,##0'
+                    
+                # KONDISI C: Baris Judul Sub-Kategori (Statis)
+                else:
+                    try:
+                        cell.value = float(val_bersih.replace('.', '').replace(',', ''))
+                        cell.number_format = '#,##0'
+                    except: pass
+            # --------------------------------------------------
                     
             if not row_data[1] and row_data[0] != "Jumlah" and row_data[3].lower() != "jumlah":
                 cell.font = bold_font
@@ -98,6 +126,7 @@ def create_styled_excel(cleaned_data):
     ws.column_dimensions['G'].width = 14
     ws.column_dimensions['H'].width = 16
     
+    # Cetak tebal otomatis baris Total
     for r_idx in range(3, ws.max_row + 1):
         cell_d = ws.cell(row=r_idx, column=4)
         if cell_d.value and "jumlah" in str(cell_d.value).lower():
@@ -229,7 +258,7 @@ with tab1:
             except Exception as e: st.error(f"Error pada sistem: {e}")
 
 # ------------------------------------------
-# TAB 2: MODE CSV / EXCEL KOTOR DENGAN PEMULIH TANGGAL (FIXED 00:00:00)
+# TAB 2: MODE CSV / EXCEL KOTOR 
 # ------------------------------------------
 with tab2:
     st.write("**Gunakan mode ini jika Anda sudah punya file CSV / Excel yang berantakan.**")
@@ -283,34 +312,22 @@ with tab2:
                     
                     no_urut = r[0]
                     kode_rek = r[1]
-                    
-                    # --- FITUR ANTI-TANGGAL EXCEL (PEMULIHAN KODE PROGRAM FIXED) ---
                     kode_prog_mentah = r[2]
                     
-                    # Deteksi YYYY-MM-DD (dengan atau tanpa buntut jam 00:00:00)
                     m_date = re.match(r'^(\d{4})-(\d{2})-(\d{2})(?:\s.*)?$', kode_prog_mentah)
                     if m_date:
                         yyyy, mm, dd = m_date.groups()
-                        # Jika tahun baru (misal 2026), format aslinya 2 digit
-                        if int(yyyy) >= 2024:
-                            kode_prog = f"{dd}. {mm}."
-                        # Jika tahun lawas, format aslinya 3 digit
-                        else:
-                            kode_prog = f"{dd}. {mm}. {yyyy[-2:]}."
+                        if int(yyyy) >= 2024: kode_prog = f"{dd}. {mm}."
+                        else: kode_prog = f"{dd}. {mm}. {yyyy[-2:]}."
                     
-                    # Deteksi DD/MM/YYYY atau DD-MM-YYYY (dengan atau tanpa buntut jam 00:00:00)
                     elif re.match(r'^(\d{2})[/-](\d{2})[/-](\d{4})(?:\s.*)?$', kode_prog_mentah):
                         m_date2 = re.match(r'^(\d{2})[/-](\d{2})[/-](\d{4})(?:\s.*)?$', kode_prog_mentah)
                         p1, p2, yyyy = m_date2.groups()
-                        if int(yyyy) >= 2024:
-                            kode_prog = f"{p1}. {p2}."
-                        else:
-                            kode_prog = f"{p1}. {p2}. {yyyy[-2:]}."
+                        if int(yyyy) >= 2024: kode_prog = f"{p1}. {p2}."
+                        else: kode_prog = f"{p1}. {p2}. {yyyy[-2:]}."
                     
-                    # Jika tidak berwujud tanggal, bersihkan saja buntut jam jika tak sengaja ada
                     else:
                         kode_prog = re.sub(r'\s+00:00:00$', '', kode_prog_mentah)
-                    # -----------------------------------------------------------------
                     
                     uraian = r[3]
                     rem = [x for x in r[4:] if x]
@@ -345,7 +362,7 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Tabel berhasil dirapikan dan kode tanggal otomatis dipulihkan! ({len(cleaned_csv_data)} baris)")
+                    st.success(f"✅ Tabel berhasil dirapikan! Kode tanggal dipulihkan, dan Formula Excel siap digunakan. ({len(cleaned_csv_data)} baris)")
                     st.markdown("### 👀 Pratinjau Data CSV/Excel")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
