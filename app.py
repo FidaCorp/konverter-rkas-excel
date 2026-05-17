@@ -35,7 +35,7 @@ with st.sidebar:
     📊 **MODE CSV/EXCEL KOTOR:**
     Rapikan file Excel/CSV (hasil *convert* aplikasi lain). 
     """)
-    st.info("⚡ **Update Penting:** Perbaikan Filter Cerdas. Sistem dijamin tidak akan menghapus rincian barang secara tidak sengaja.")
+    st.info("⚡ **Update Penting:** Pembersih khusus untuk menghapus baris judul sisa (Volume, Satuan, Tarif Harga) yang bocor ke dalam data.")
 
 # ==========================================
 # 3. FUNGSI MERAPIKAN EXCEL (HYBRID CALCULATION)
@@ -179,13 +179,16 @@ with tab1:
                         
                         row_str_lower = " ".join(cells).lower()
                         
-                        # --- FILTER BARU ANTI-HILANG (MODE PDF) ---
+                        # --- FILTER BARU ANTI-HILANG & PENGHANCUR HEADER (MODE PDF) ---
                         is_garbage = False
                         if any(kw in row_str_lower for kw in ["npsn", "nama sekolah", "alamat", "kabupaten", "provinsi", "sumber dana", "total penerimaan"]): 
                             is_garbage = True
                         if "kode rekening" in row_str_lower and "uraian" in row_str_lower: is_garbage = True
                         if "rincian perhitungan" in row_str_lower and "tarif harga" in row_str_lower: is_garbage = True
                         if str(cells[0]).lower().strip() in ["a. penerimaan", "b. belanja"]: is_garbage = True
+                        
+                        # Pemblokir baris sisa "Volume, Satuan, Tarif Harga"
+                        if "volume" in row_str_lower and "tarif harga" in row_str_lower and "satuan" in row_str_lower: is_garbage = True
                         
                         if is_garbage: continue
                         if len(cells) == 1 and "jumlah" not in row_str_lower: continue
@@ -261,7 +264,7 @@ with tab2:
     uploaded_csv = st.file_uploader("📂 Upload File CSV atau Excel yang Kotor", type=["csv", "xlsx", "xls"], key="csv_uploader")
     
     if uploaded_csv is not None:
-        with st.spinner("⏳ Menata ulang kolom dan mencegah data terhapus..."):
+        with st.spinner("⏳ Menata ulang kolom dan menghancurkan judul sisa..."):
             try:
                 if uploaded_csv.name.endswith('.csv'): df_raw = pd.read_csv(uploaded_csv, header=None)
                 else: df_raw = pd.read_excel(uploaded_csv, header=None)
@@ -280,12 +283,14 @@ with tab2:
                         if "kode rekening" in row_str_lower or "b. belanja" in row_str_lower: table_started = True
                         continue
                     
-                    # --- FILTER BARU ANTI-HILANG (MODE CSV) ---
-                    # Mengecek kolom spesifik saja agar tidak menghapus rincian barang penting
+                    # --- FILTER BARU ANTI-HILANG & PENGHANCUR HEADER (MODE CSV) ---
                     if "kode rekening" in str(r[1]).lower() or "kode rekening" in str(r[0]).lower(): continue
                     if "uraian" in str(r[3]).lower() or "rincian perhitungan" in str(r[3]).lower(): continue
                     if "no. urut" in str(r[0]).lower() or "b. belanja" in str(r[0]).lower(): continue
                     if "a. penerimaan" in str(r[0]).lower(): continue
+                    
+                    # Pemblokir mutlak untuk baris "Volume, Satuan, Tarif Harga"
+                    if "volume" in row_str_lower and "tarif harga" in row_str_lower and "satuan" in row_str_lower: continue
                     
                     non_empty_r = [x for x in r if x]
                     if len(non_empty_r) == 1 and "jumlah" not in row_str_lower: continue
@@ -340,7 +345,7 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Tabel berhasil dirapikan! Filter terbaru telah siap. ({len(cleaned_csv_data)} baris)")
+                    st.success(f"✅ Tabel berhasil dirapikan! Baris sisa judul telah dibersihkan. ({len(cleaned_csv_data)} baris)")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
                     
