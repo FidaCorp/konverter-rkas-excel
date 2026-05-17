@@ -229,7 +229,7 @@ with tab1:
             except Exception as e: st.error(f"Error pada sistem: {e}")
 
 # ------------------------------------------
-# TAB 2: MODE CSV / EXCEL KOTOR DENGAN PEMULIH TANGGAL
+# TAB 2: MODE CSV / EXCEL KOTOR DENGAN PEMULIH TANGGAL (FIXED 00:00:00)
 # ------------------------------------------
 with tab2:
     st.write("**Gunakan mode ini jika Anda sudah punya file CSV / Excel yang berantakan.**")
@@ -284,33 +284,33 @@ with tab2:
                     no_urut = r[0]
                     kode_rek = r[1]
                     
-                    # --- FITUR ANTI-TANGGAL EXCEL (PEMULIHAN KODE PROGRAM) ---
+                    # --- FITUR ANTI-TANGGAL EXCEL (PEMULIHAN KODE PROGRAM FIXED) ---
                     kode_prog_mentah = r[2]
                     
-                    # Jika terbaca format YYYY-MM-DD (contoh: 2026-03-03 atau 2004-08-05)
-                    m_date = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', kode_prog_mentah)
+                    # Deteksi YYYY-MM-DD (dengan atau tanpa buntut jam 00:00:00)
+                    m_date = re.match(r'^(\d{4})-(\d{2})-(\d{2})(?:\s.*)?$', kode_prog_mentah)
                     if m_date:
                         yyyy, mm, dd = m_date.groups()
-                        # Jika tahunnya baru (>=2024), berarti aslinya cuma 2 digit misal 03. 03.
+                        # Jika tahun baru (misal 2026), format aslinya 2 digit
                         if int(yyyy) >= 2024:
                             kode_prog = f"{dd}. {mm}."
-                        # Jika tahunnya lampau, berarti aslinya 3 digit misal 05. 08. 04.
+                        # Jika tahun lawas, format aslinya 3 digit
                         else:
                             kode_prog = f"{dd}. {mm}. {yyyy[-2:]}."
                     
-                    # Jika terbaca format DD/MM/YYYY
-                    elif re.match(r'^(\d{2})/(\d{2})/(\d{4})$', kode_prog_mentah):
-                        m_date2 = re.match(r'^(\d{2})/(\d{2})/(\d{4})$', kode_prog_mentah)
+                    # Deteksi DD/MM/YYYY atau DD-MM-YYYY (dengan atau tanpa buntut jam 00:00:00)
+                    elif re.match(r'^(\d{2})[/-](\d{2})[/-](\d{4})(?:\s.*)?$', kode_prog_mentah):
+                        m_date2 = re.match(r'^(\d{2})[/-](\d{2})[/-](\d{4})(?:\s.*)?$', kode_prog_mentah)
                         p1, p2, yyyy = m_date2.groups()
                         if int(yyyy) >= 2024:
                             kode_prog = f"{p1}. {p2}."
                         else:
                             kode_prog = f"{p1}. {p2}. {yyyy[-2:]}."
                     
-                    # Jika tidak dirusak Excel (Aman)
+                    # Jika tidak berwujud tanggal, bersihkan saja buntut jam jika tak sengaja ada
                     else:
-                        kode_prog = kode_prog_mentah
-                    # ----------------------------------------------------------
+                        kode_prog = re.sub(r'\s+00:00:00$', '', kode_prog_mentah)
+                    # -----------------------------------------------------------------
                     
                     uraian = r[3]
                     rem = [x for x in r[4:] if x]
