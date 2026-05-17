@@ -35,7 +35,7 @@ with st.sidebar:
     📊 **MODE CSV/EXCEL KOTOR:**
     Rapikan file Excel/CSV (hasil *convert* aplikasi lain). 
     """)
-    st.info("⚡ **Hybrid Total:** Menghitung rincian barang secara statis (anti-blank) dan menggunakan rumus pintar di Grand Total.")
+    st.info("⚡ **Update Penting:** Perbaikan Filter Cerdas. Sistem dijamin tidak akan menghapus rincian barang secara tidak sengaja.")
 
 # ==========================================
 # 3. FUNGSI MERAPIKAN EXCEL (HYBRID CALCULATION)
@@ -75,7 +75,6 @@ def create_styled_excel(cleaned_data):
         for col_idx, val_str in enumerate(row_data, start=1):
             val_bersih = str(val_str).replace('\n', ' ').strip()
             
-            # Bersihkan spasi gaib agar formula `<>` Excel bisa bekerja sempurna
             if not val_bersih:
                 cell = ws.cell(row=row_idx, column=col_idx, value=None)
             else:
@@ -84,7 +83,6 @@ def create_styled_excel(cleaned_data):
             cell.border = thin_border
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             
-            # --- KONVERSI ANGKA MURNI ---
             if val_bersih and col_idx in [5, 7, 8]:
                 try:
                     num_str = val_bersih.replace('Rp', '').replace(' ', '')
@@ -99,17 +97,13 @@ def create_styled_excel(cleaned_data):
                     elif col_idx == 8 and not is_grand_total and not is_item:
                         cell.value = num_val
                         cell.number_format = '#,##0'
-                except:
-                    pass
+                except: pass
             
-            # --- INJEKSI TOTAL (HYBRID) ---
             if col_idx == 8:
                 if is_grand_total:
-                    # Grand Total menggunakan Formula Excel Otomatis (Aman)
                     cell.value = f'=SUMIF(B3:B{row_idx-1}, "<>", H3:H{row_idx-1})'
                     cell.number_format = '#,##0'
                 elif is_item:
-                    # Tiap barang dihitung manual oleh Python agar kebal "Protected View" & anti-blank
                     try:
                         val_e = ws.cell(row=row_idx, column=5).value
                         val_g = ws.cell(row=row_idx, column=7).value
@@ -122,9 +116,7 @@ def create_styled_excel(cleaned_data):
                         try:
                             n_str = val_bersih.replace('Rp', '').replace(' ', '').replace('.', '').replace(',', '.')
                             cell.value = float(n_str)
-                        except:
-                            cell.value = val_bersih
-                            
+                        except: cell.value = val_bersih
                     cell.number_format = '#,##0'
                 
             if not is_item and not is_grand_total:
@@ -169,7 +161,7 @@ with tab1:
     uploaded_pdf = st.file_uploader("📂 Upload File PDF Kertas Kerja", type="pdf", key="pdf_uploader")
     
     if uploaded_pdf is not None:
-        with st.spinner("⏳ Membedah dokumen dan mengaktifkan Smart Alignment... Mohon tunggu..."):
+        with st.spinner("⏳ Membedah dokumen..."):
             try:
                 raw_rows = []
                 with pdfplumber.open(uploaded_pdf) as pdf:
@@ -179,12 +171,6 @@ with tab1:
                 
                 if raw_rows:
                     cleaned_data = []
-                    garbage_keywords = [
-                        "rincian kertas kerja", "tahun anggaran", "npsn", "nama sekolah", 
-                        "alamat", "kabupaten", "provinsi", "bulan", "sumber dana", 
-                        "penerimaan", "total penerimaan", "belanja", "kode rekening",
-                        "rincian perhitungan", "tarif harga", "no. urut"
-                    ]
                     
                     for row in raw_rows:
                         if not row: continue
@@ -192,7 +178,16 @@ with tab1:
                         if not cells: continue
                         
                         row_str_lower = " ".join(cells).lower()
-                        if any(kw in row_str_lower for kw in garbage_keywords): continue
+                        
+                        # --- FILTER BARU ANTI-HILANG (MODE PDF) ---
+                        is_garbage = False
+                        if any(kw in row_str_lower for kw in ["npsn", "nama sekolah", "alamat", "kabupaten", "provinsi", "sumber dana", "total penerimaan"]): 
+                            is_garbage = True
+                        if "kode rekening" in row_str_lower and "uraian" in row_str_lower: is_garbage = True
+                        if "rincian perhitungan" in row_str_lower and "tarif harga" in row_str_lower: is_garbage = True
+                        if str(cells[0]).lower().strip() in ["a. penerimaan", "b. belanja"]: is_garbage = True
+                        
+                        if is_garbage: continue
                         if len(cells) == 1 and "jumlah" not in row_str_lower: continue
                         
                         no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah = "", "", "", "", "", "", "", ""
@@ -266,19 +261,13 @@ with tab2:
     uploaded_csv = st.file_uploader("📂 Upload File CSV atau Excel yang Kotor", type=["csv", "xlsx", "xls"], key="csv_uploader")
     
     if uploaded_csv is not None:
-        with st.spinner("⏳ Menata ulang kolom dan menanamkan Formula Total Akurat..."):
+        with st.spinner("⏳ Menata ulang kolom dan mencegah data terhapus..."):
             try:
                 if uploaded_csv.name.endswith('.csv'): df_raw = pd.read_csv(uploaded_csv, header=None)
                 else: df_raw = pd.read_excel(uploaded_csv, header=None)
                 
                 df_raw = df_raw.fillna("").astype(str)
                 cleaned_csv_data = []
-                garbage_keywords = [
-                    "rincian kertas kerja", "tahun anggaran", "npsn", "nama sekolah", 
-                    "alamat", "kabupaten", "provinsi", "bulan", "sumber dana", 
-                    "penerimaan", "total penerimaan", "belanja", "kode rekening",
-                    "rincian perhitungan", "tarif harga", "no. urut", "kertas kerja perbulan"
-                ]
                 
                 table_started = False 
                 
@@ -291,7 +280,12 @@ with tab2:
                         if "kode rekening" in row_str_lower or "b. belanja" in row_str_lower: table_started = True
                         continue
                     
-                    if any(kw in row_str_lower for kw in garbage_keywords): continue
+                    # --- FILTER BARU ANTI-HILANG (MODE CSV) ---
+                    # Mengecek kolom spesifik saja agar tidak menghapus rincian barang penting
+                    if "kode rekening" in str(r[1]).lower() or "kode rekening" in str(r[0]).lower(): continue
+                    if "uraian" in str(r[3]).lower() or "rincian perhitungan" in str(r[3]).lower(): continue
+                    if "no. urut" in str(r[0]).lower() or "b. belanja" in str(r[0]).lower(): continue
+                    if "a. penerimaan" in str(r[0]).lower(): continue
                     
                     non_empty_r = [x for x in r if x]
                     if len(non_empty_r) == 1 and "jumlah" not in row_str_lower: continue
@@ -346,7 +340,7 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Tabel berhasil dirapikan! Metode Hybrid Total telah siap. ({len(cleaned_csv_data)} baris)")
+                    st.success(f"✅ Tabel berhasil dirapikan! Filter terbaru telah siap. ({len(cleaned_csv_data)} baris)")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
                     
