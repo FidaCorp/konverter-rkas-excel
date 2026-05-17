@@ -33,7 +33,7 @@ with st.sidebar:
     Ubah PDF Kertas Kerja BOSP langsung menjadi format Excel rapi.
     
     📊 **MODE CSV/EXCEL KOTOR:**
-    Rapikan file Excel/CSV (hasil *convert* aplikasi lain) yang tata letaknya bergeser. Sistem akan otomatis membuang identitas sekolah dan tanda tangan, menyisakan tabel inti saja.
+    Rapikan file Excel/CSV (hasil *convert* aplikasi lain). Sistem ini menggunakan **Grid Ketat**, sehingga angka harga/volume tidak akan bercampur masuk ke kolom Uraian.
     """)
 
 # ==========================================
@@ -153,8 +153,6 @@ with tab1:
                         
                         row_str_lower = " ".join(cells).lower()
                         if any(kw in row_str_lower for kw in garbage_keywords): continue
-                        
-                        # Buang teks tanda tangan nyasar
                         if len(cells) == 1 and "jumlah" not in row_str_lower: continue
                         
                         no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah = "", "", "", "", "", "", "", ""
@@ -234,22 +232,22 @@ with tab1:
             except Exception as e: st.error(f"Error pada sistem: {e}")
 
 # ------------------------------------------
-# TAB 2: MODE CSV / EXCEL KOTOR (DIPERBARUI)
+# TAB 2: MODE CSV / EXCEL KOTOR DENGAN SISTEM GRID KETAT
 # ------------------------------------------
 with tab2:
-    st.write("**Gunakan mode ini jika Anda sudah punya file CSV / Excel yang berantakan (seperti hasil convert aplikasi lain).**")
+    st.write("**Gunakan mode ini jika Anda sudah punya file CSV / Excel yang berantakan.**")
     uploaded_csv = st.file_uploader("📂 Upload File CSV atau Excel yang Kotor", type=["csv", "xlsx", "xls"], key="csv_uploader")
     
     if uploaded_csv is not None:
-        with st.spinner("⏳ Menata ulang kolom dan membuang judul yang tidak perlu..."):
+        with st.spinner("⏳ Menata ulang kolom dengan Sistem Grid Ketat (Anti Campur)..."):
             try:
-                # Membaca File Apapun yang masuk
+                # Membaca file
                 if uploaded_csv.name.endswith('.csv'):
                     df_raw = pd.read_csv(uploaded_csv, header=None)
                 else:
                     df_raw = pd.read_excel(uploaded_csv, header=None)
                 
-                # Konversi semua ke string agar tidak error
+                # Ubah semua jadi teks dan hapus nan
                 df_raw = df_raw.fillna("").astype(str)
                 
                 cleaned_csv_data = []
@@ -260,87 +258,88 @@ with tab2:
                     "rincian perhitungan", "tarif harga", "no. urut", "kertas kerja perbulan"
                 ]
                 
-                table_started = False # Saklar untuk melewati bagian kop identitas di atas
+                table_started = False 
                 
                 for index, row in df_raw.iterrows():
-                    cells = [x.strip() for x in row.tolist() if x.strip() != "" and x.strip().lower() != "nan"]
-                    if not cells: continue
+                    # Jadikan list murni sesuai indeks kolom (Grid Mutlak)
+                    r = [str(x).replace('nan', '').replace('NaN', '').strip() for x in row.tolist()]
                     
-                    row_str_lower = " ".join(cells).lower()
+                    # Pastikan minimal ada 8 kolom (padding) agar tidak error out of index
+                    while len(r) < 8: r.append("")
                     
-                    # 1. TAHAP PEMBUANGAN JUDUL ATAS (Skip semuanya sampai ketemu tabel Belanja)
+                    row_str_lower = " ".join(r).lower()
+                    
+                    # 1. Lewati semua Kop Identitas Sekolah
                     if not table_started:
-                        if "kode rekening" in row_str_lower or "rincian perhitungan" in row_str_lower or "b. belanja" in row_str_lower:
+                        if "kode rekening" in row_str_lower or "b. belanja" in row_str_lower:
                             table_started = True
-                        continue # Langsung lanjut ke baris berikutnya
+                        continue
                     
-                    # 2. TAHAP PEMBUANGAN HEADER BERULANG
+                    # 2. Lewati pengulangan baris judul
                     if any(kw in row_str_lower for kw in garbage_keywords): continue
                     
-                    # 3. TAHAP PEMBUANGAN TANDA TANGAN / TANGGAL DI BAWAH (Hanya 1 kolom tapi bukan "Jumlah")
-                    if len(cells) == 1 and "jumlah" not in row_str_lower: continue
+                    # 3. Lewati kolom tanda tangan
+                    non_empty_r = [x for x in r if x]
+                    if len(non_empty_r) == 1 and "jumlah" not in row_str_lower: continue
+                    if len(non_empty_r) == 0: continue
                     
                     no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah = "", "", "", "", "", "", "", ""
                     
-                    if "jumlah" in row_str_lower and len(cells) <= 3:
+                    # Jika ini baris total paling bawah
+                    if "jumlah" in row_str_lower and len(non_empty_r) <= 3:
                         uraian = "Jumlah"
-                        for c in reversed(cells):
-                            if sum(char.isdigit() for char in c) > 3:
+                        for c in reversed(r):
+                            if c and sum(char.isdigit() for char in c) > 3:
                                 jumlah = c
                                 break
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
                         continue
+                    
+                    # --- PEMETAAN KOLOM GRID KETAT (Mencegah Angka Masuk Ke Uraian) ---
+                    # Karena di file Excel kolomnya sudah diatur, kita pakai langsung index kolomnya
+                    no_urut = r[0]
+                    kode_rek = r[1]
+                    kode_prog = r[2]
+                    uraian = r[3]  # <--- Ini kuncinya! Uraian PASTI dari kolom ke-4 di Excel asli Anda
+                    
+                    # Ambil sisa teks setelah kolom uraian (di area volume & harga)
+                    rem = [x for x in r[4:] if x]
+                    
+                    # Terkadang karena sedikit error export, Uraian tertulis di kolom ke-5
+                    if not uraian and rem:
+                        uraian = rem.pop(0)
                         
-                    if re.match(r'^\d+\.$', cells[0]): no_urut = cells.pop(0)
-                    if cells and re.match(r'^5\.\d', cells[0]): kode_rek = cells.pop(0)
-                    
-                    # Cek Kode Program pada CSV yang kadang format tanggal (2026-03-03) atau angka (03.)
-                    prog_parts = []
-                    while cells and (re.match(r'^(?:\d{2}\.\s*)+$', cells[0]) or re.match(r'^\d{4}-\d{2}-\d{2}$', cells[0])):
-                        prog_parts.append(cells.pop(0))
-                    if prog_parts: kode_prog = " ".join(prog_parts)
-                    
-                    if cells and re.match(r'^((?:\d{2}\.\s*)+)\s*(.+)$', cells[0]):
-                        m = re.match(r'^((?:\d{2}\.\s*)+)\s*(.+)$', cells[0])
-                        kode_prog += (" " if kode_prog else "") + m.group(1).strip()
-                        if m.group(2).strip(): cells[0] = m.group(2).strip()
-                        else: cells.pop(0)
-                    
-                    if not cells: continue
-                    
-                    if kode_rek:
-                        if len(cells) >= 5:
-                            uraian = " ".join(cells[:-4])
-                            volume = cells[-4]
-                            satuan = cells[-3]
-                            tarif = cells[-2]
-                            jumlah = cells[-1]
-                        elif len(cells) == 4:
-                            m = re.match(r'^([\d\.,]+)\s+([a-zA-Z\s/]+)$', cells[-3])
+                    if kode_rek: # Baris dengan Rincian Item (Beli barang/Honor)
+                        if len(rem) >= 4:
+                            # Jika uraian kepanjangan sehingga tumpah ke kolom lain
+                            if len(rem) > 4:
+                                uraian += " " + " ".join(rem[:-4])
+                            volume, satuan, tarif, jumlah = rem[-4], rem[-3], rem[-2], rem[-1]
+                        elif len(rem) == 3:
+                            # Vol & Satuan menempel misal "10 pack"
+                            m = re.match(r'^([\d\.,]+)\s*(.*)$', rem[0])
                             if m:
-                                uraian = " ".join(cells[:-3])
                                 volume = m.group(1).strip()
                                 satuan = m.group(2).strip()
-                                tarif = cells[-2]
-                                jumlah = cells[-1]
                             else:
-                                uraian = " ".join(cells[:-2])
-                                tarif = cells[-2]
-                                jumlah = cells[-1]
-                        else:
-                            uraian = " ".join(cells)
-                    else:
-                        if len(cells) >= 2:
-                            uraian = " ".join(cells[:-1])
-                            jumlah = cells[-1]
-                        elif len(cells) == 1:
-                            uraian = cells[0]
-                    
+                                volume = rem[0]
+                            tarif = rem[1]
+                            jumlah = rem[2]
+                        elif len(rem) == 2:
+                            tarif = rem[0]
+                            jumlah = rem[1]
+                    else: # Baris Standar Kategori (Misal "Standar Proses")
+                        if len(rem) >= 1:
+                            jumlah = rem[-1]
+                            # Jika ada sisa, lekatkan ke Uraian
+                            if len(rem) > 1:
+                                uraian += " " + " ".join(rem[:-1])
+                                
                     if any([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah]):
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Tabel berhasil dirapikan! Teks identitas & judul telah dibuang ({len(cleaned_csv_data)} baris tabel utama).")
+                    st.success(f"✅ Tabel berhasil dirapikan dengan sempurna! ({len(cleaned_csv_data)} baris)")
                     st.markdown("### 👀 Pratinjau Data CSV/Excel")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
