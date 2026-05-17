@@ -33,12 +33,12 @@ with st.sidebar:
     Ubah PDF Kertas Kerja BOSP langsung menjadi format Excel rapi.
     
     📊 **MODE CSV/EXCEL KOTOR:**
-    Rapikan file Excel/CSV (hasil *convert* aplikasi lain). Sistem ini dilengkapi pemulih otomatis jika Kode Program dirusak menjadi format tanggal oleh Excel.
+    Rapikan file Excel/CSV (hasil *convert* aplikasi lain). 
     """)
-    st.info("⚡ **Baru:** Excel hasil unduhan kini dilengkapi **Formula Otomatis** pada kolom Jumlah.")
+    st.info("⚡ **Sistem Cerdas:** Formula Jumlah Otomatis kini telah disempurnakan. Kebal terhadap perbedaan format ribuan (Titik/Koma) dan aman untuk belanja tanpa volume (Lumpsum).")
 
 # ==========================================
-# 3. FUNGSI MERAPIKAN EXCEL DENGAN FORMULA
+# 3. FUNGSI MERAPIKAN EXCEL DENGAN FORMULA CERDAS
 # ==========================================
 def create_styled_excel(cleaned_data):
     output = io.BytesIO()
@@ -69,48 +69,48 @@ def create_styled_excel(cleaned_data):
             cell.border = thin_border
     
     for row_idx, row_data in enumerate(cleaned_data, start=3):
+        is_grand_total = "jumlah" in str(row_data[3]).lower() or "jumlah" in str(row_data[0]).lower()
+        
         for col_idx, val_str in enumerate(row_data, start=1):
             val_bersih = str(val_str).replace('\n', ' ').strip()
             cell = ws.cell(row=row_idx, column=col_idx, value=val_bersih)
             cell.border = thin_border
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             
-            # --- INJEKSI FORMAT DAN FORMULA EXCEL OTOMATIS ---
-            
-            # Kolom 5 (Volume)
-            if col_idx == 5 and val_bersih:
-                try: cell.value = float(val_bersih.replace(',', '.'))
-                except: pass
-                
-            # Kolom 7 (Tarif Harga)
-            elif col_idx == 7 and val_bersih:
+            # --- PEMBACA ANGKA INDONESIA (ANTI-ERROR) ---
+            if col_idx in [5, 7, 8] and val_bersih:
                 try:
-                    cell.value = float(val_bersih.replace('.', '').replace(',', ''))
-                    cell.number_format = '#,##0'
-                except: pass
-                
-            # Kolom 8 (Jumlah)
-            elif col_idx == 8 and val_bersih:
-                # KONDISI A: Baris Total "Jumlah" paling bawah
-                if "jumlah" in str(row_data[3]).lower() or "jumlah" in str(row_data[0]).lower():
-                    # SUM pintar: Menjumlahkan sel H jika sel B (Kode Rekening) tidak kosong
-                    cell.value = f'=SUMIF(B3:B{row_idx-1}, "?*", H3:H{row_idx-1})'
-                    cell.number_format = '#,##0'
+                    # Buang spasi/Rp, hapus titik pemisah ribuan, ganti koma desimal jadi titik mesin
+                    num_str = val_bersih.replace('Rp', '').replace(' ', '')
+                    num_str = num_str.replace('.', '').replace(',', '.')
+                    num_val = float(num_str)
                     
-                # KONDISI B: Baris Rincian Belanja (Ada Volume dan Tarif)
-                elif row_data[4] and row_data[6] and row_data[1]:
-                    # Formula Volume x Tarif
-                    cell.value = f"=E{row_idx}*G{row_idx}"
-                    cell.number_format = '#,##0'
-                    
-                # KONDISI C: Baris Judul Sub-Kategori (Statis)
-                else:
-                    try:
-                        cell.value = float(val_bersih.replace('.', '').replace(',', ''))
+                    if col_idx == 5: # Volume
+                        cell.value = num_val
+                    elif col_idx == 7: # Tarif Harga
+                        cell.value = num_val
                         cell.number_format = '#,##0'
-                    except: pass
-            # --------------------------------------------------
-                    
+                    elif col_idx == 8: # Kolom Jumlah
+                        if is_grand_total:
+                            cell.value = f'=SUMIF(B3:B{row_idx-1}, "?*", H3:H{row_idx-1})'
+                        elif row_data[1]: # Jika ini baris Barang (Ada Kode Rekening)
+                            # Berikan rumus HANYA JIKA volume dan tarif ada isinya
+                            if row_data[4] and row_data[6]:
+                                cell.value = f"=E{row_idx}*G{row_idx}"
+                            else:
+                                cell.value = num_val # Lumpsum aman tanpa nol
+                        else: # Kategori/Sub-Kategori
+                            cell.value = num_val
+                            
+                        cell.number_format = '#,##0'
+                except:
+                    pass
+            
+            # Garansi Formula Total Utama tertulis
+            if is_grand_total and col_idx == 8:
+                cell.value = f'=SUMIF(B3:B{row_idx-1}, "?*", H3:H{row_idx-1})'
+                cell.number_format = '#,##0'
+                
             if not row_data[1] and row_data[0] != "Jumlah" and row_data[3].lower() != "jumlah":
                 cell.font = bold_font
                 
@@ -126,7 +126,6 @@ def create_styled_excel(cleaned_data):
     ws.column_dimensions['G'].width = 14
     ws.column_dimensions['H'].width = 16
     
-    # Cetak tebal otomatis baris Total
     for r_idx in range(3, ws.max_row + 1):
         cell_d = ws.cell(row=r_idx, column=4)
         if cell_d.value and "jumlah" in str(cell_d.value).lower():
@@ -160,8 +159,7 @@ with tab1:
                 with pdfplumber.open(uploaded_pdf) as pdf:
                     for page in pdf.pages:
                         table = page.extract_table()
-                        if table:
-                            raw_rows.extend(table)
+                        if table: raw_rows.extend(table)
                 
                 if raw_rows:
                     cleaned_data = []
@@ -211,54 +209,41 @@ with tab1:
                         if kode_rek:
                             if len(cells) >= 5:
                                 uraian = " ".join(cells[:-4])
-                                volume = cells[-4]
-                                satuan = cells[-3]
-                                tarif = cells[-2]
-                                jumlah = cells[-1]
+                                volume, satuan, tarif, jumlah = cells[-4], cells[-3], cells[-2], cells[-1]
                             elif len(cells) == 4:
                                 m = re.match(r'^([\d\.,]+)\s+([a-zA-Z\s/]+)$', cells[-3])
                                 if m:
                                     uraian = " ".join(cells[:-3])
-                                    volume = m.group(1).strip()
-                                    satuan = m.group(2).strip()
-                                    tarif = cells[-2]
-                                    jumlah = cells[-1]
+                                    volume, satuan = m.group(1).strip(), m.group(2).strip()
+                                    tarif, jumlah = cells[-2], cells[-1]
                                 else:
                                     uraian = " ".join(cells[:-2])
-                                    tarif = cells[-2]
-                                    jumlah = cells[-1]
-                            else:
-                                uraian = " ".join(cells)
+                                    tarif, jumlah = cells[-2], cells[-1]
+                            else: uraian = " ".join(cells)
                         else:
                             if len(cells) >= 2:
                                 uraian = " ".join(cells[:-1])
                                 jumlah = cells[-1]
-                            elif len(cells) == 1:
-                                uraian = cells[0]
+                            elif len(cells) == 1: uraian = cells[0]
                         
                         if any([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah]):
                             cleaned_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
                     
                     if cleaned_data:
                         st.success(f"✅ Berhasil mengekstrak {len(cleaned_data)} baris data!")
-                        st.markdown("### 👀 Pratinjau Data (Review)")
                         df_preview = pd.DataFrame(cleaned_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                         st.dataframe(df_preview, use_container_width=True, height=350)
                         
                         excel_data = create_styled_excel(cleaned_data)
-                        
                         st.divider()
-                        st.markdown("<h3 style='text-align: center; color: #1E88E5;'>🎉 Dokumen Anda Telah Siap!</h3>", unsafe_allow_html=True)
-                        st.write("")
                         col1, col2, col3 = st.columns([1, 2, 1])
-                        with col2:
-                            st.download_button("📥 DOWNLOAD EXCEL FINAL SEKARANG", data=excel_data, file_name="RKAS_BOSP_PDF_Rapi.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+                        with col2: st.download_button("📥 DOWNLOAD EXCEL FINAL SEKARANG", data=excel_data, file_name="RKAS_BOSP_PDF_Rapi.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
                     else: st.warning("Data tabel kosong.")
                 else: st.warning("Gagal membaca isi tabel pada PDF.")
             except Exception as e: st.error(f"Error pada sistem: {e}")
 
 # ------------------------------------------
-# TAB 2: MODE CSV / EXCEL KOTOR 
+# TAB 2: MODE CSV / EXCEL KOTOR
 # ------------------------------------------
 with tab2:
     st.write("**Gunakan mode ini jika Anda sudah punya file CSV / Excel yang berantakan.**")
@@ -267,10 +252,8 @@ with tab2:
     if uploaded_csv is not None:
         with st.spinner("⏳ Menata ulang kolom dan memulihkan kode yang dirusak format tanggal..."):
             try:
-                if uploaded_csv.name.endswith('.csv'):
-                    df_raw = pd.read_csv(uploaded_csv, header=None)
-                else:
-                    df_raw = pd.read_excel(uploaded_csv, header=None)
+                if uploaded_csv.name.endswith('.csv'): df_raw = pd.read_csv(uploaded_csv, header=None)
+                else: df_raw = pd.read_excel(uploaded_csv, header=None)
                 
                 df_raw = df_raw.fillna("").astype(str)
                 cleaned_csv_data = []
@@ -288,7 +271,6 @@ with tab2:
                     while len(r) < 8: r.append("")
                     
                     row_str_lower = " ".join(r).lower()
-                    
                     if not table_started:
                         if "kode rekening" in row_str_lower or "b. belanja" in row_str_lower: table_started = True
                         continue
@@ -310,8 +292,7 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
                         continue
                     
-                    no_urut = r[0]
-                    kode_rek = r[1]
+                    no_urut, kode_rek = r[0], r[1]
                     kode_prog_mentah = r[2]
                     
                     m_date = re.match(r'^(\d{4})-(\d{2})-(\d{2})(?:\s.*)?$', kode_prog_mentah)
@@ -319,61 +300,43 @@ with tab2:
                         yyyy, mm, dd = m_date.groups()
                         if int(yyyy) >= 2024: kode_prog = f"{dd}. {mm}."
                         else: kode_prog = f"{dd}. {mm}. {yyyy[-2:]}."
-                    
                     elif re.match(r'^(\d{2})[/-](\d{2})[/-](\d{4})(?:\s.*)?$', kode_prog_mentah):
                         m_date2 = re.match(r'^(\d{2})[/-](\d{2})[/-](\d{4})(?:\s.*)?$', kode_prog_mentah)
                         p1, p2, yyyy = m_date2.groups()
                         if int(yyyy) >= 2024: kode_prog = f"{p1}. {p2}."
                         else: kode_prog = f"{p1}. {p2}. {yyyy[-2:]}."
-                    
-                    else:
-                        kode_prog = re.sub(r'\s+00:00:00$', '', kode_prog_mentah)
+                    else: kode_prog = re.sub(r'\s+00:00:00$', '', kode_prog_mentah)
                     
                     uraian = r[3]
                     rem = [x for x in r[4:] if x]
-                    
-                    if not uraian and rem:
-                        uraian = rem.pop(0)
+                    if not uraian and rem: uraian = rem.pop(0)
                         
                     if kode_rek: 
                         if len(rem) >= 4:
-                            if len(rem) > 4:
-                                uraian += " " + " ".join(rem[:-4])
+                            if len(rem) > 4: uraian += " " + " ".join(rem[:-4])
                             volume, satuan, tarif, jumlah = rem[-4], rem[-3], rem[-2], rem[-1]
                         elif len(rem) == 3:
                             m = re.match(r'^([\d\.,]+)\s*(.*)$', rem[0])
-                            if m:
-                                volume = m.group(1).strip()
-                                satuan = m.group(2).strip()
-                            else:
-                                volume = rem[0]
-                            tarif = rem[1]
-                            jumlah = rem[2]
-                        elif len(rem) == 2:
-                            tarif = rem[0]
-                            jumlah = rem[1]
+                            if m: volume, satuan = m.group(1).strip(), m.group(2).strip()
+                            else: volume = rem[0]
+                            tarif, jumlah = rem[1], rem[2]
+                        elif len(rem) == 2: tarif, jumlah = rem[0], rem[1]
                     else: 
                         if len(rem) >= 1:
                             jumlah = rem[-1]
-                            if len(rem) > 1:
-                                uraian += " " + " ".join(rem[:-1])
+                            if len(rem) > 1: uraian += " " + " ".join(rem[:-1])
                                 
                     if any([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah]):
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Tabel berhasil dirapikan! Kode tanggal dipulihkan, dan Formula Excel siap digunakan. ({len(cleaned_csv_data)} baris)")
-                    st.markdown("### 👀 Pratinjau Data CSV/Excel")
+                    st.success(f"✅ Tabel berhasil dirapikan! Kode tanggal dipulihkan, dan Formula siap. ({len(cleaned_csv_data)} baris)")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
                     
                     excel_data_csv = create_styled_excel(cleaned_csv_data)
-                    
                     st.divider()
-                    st.markdown("<h3 style='text-align: center; color: #1E88E5;'>🎉 Dokumen Anda Telah Siap!</h3>", unsafe_allow_html=True)
-                    st.write("")
                     col1, col2, col3 = st.columns([1, 2, 1])
-                    with col2:
-                        st.download_button("📥 DOWNLOAD EXCEL FINAL SEKARANG", data=excel_data_csv, file_name="RKAS_BOSP_Dari_CSV_Rapi.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+                    with col2: st.download_button("📥 DOWNLOAD EXCEL FINAL SEKARANG", data=excel_data_csv, file_name="RKAS_BOSP_Dari_CSV_Rapi.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
                 else: st.warning("Gagal menyaring data. Pastikan format dokumennya mirip Kertas Kerja.")
             except Exception as e: st.error(f"Terjadi kesalahan saat memproses CSV/Excel: {e}")
