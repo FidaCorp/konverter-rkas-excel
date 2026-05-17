@@ -5,6 +5,8 @@ import io
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 import re
+import json
+import os
 
 # ==========================================
 # 1. KONFIGURASI TAMPILAN HALAMAN
@@ -21,7 +23,29 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. SIDEBAR (PANEL KIRI)
+# 2. SISTEM MANAJEMEN LINK (PORTAL ADMIN)
+# ==========================================
+LINKS_FILE = "links.json"
+
+def load_links():
+    if os.path.exists(LINKS_FILE):
+        try:
+            with open(LINKS_FILE, "r") as f:
+                return json.load(f)
+        except:
+            pass
+    # Default link jika file belum ada
+    return {"Aplikasi Utama RKAS Manual": "https://script.google.com/macros/s/AKfycbzxWVN-UBAf-VimxCFg4CPgWhRu6pqpy0qlzSrWJEja44mvnVZE1c680fQnuohQLYMo/exec"}
+
+def save_links(links):
+    with open(LINKS_FILE, "w") as f:
+        json.dump(links, f)
+
+if 'app_links' not in st.session_state:
+    st.session_state.app_links = load_links()
+
+# ==========================================
+# 3. SIDEBAR (PANEL KIRI)
 # ==========================================
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3135/3135692.png", width=80) 
@@ -35,10 +59,50 @@ with st.sidebar:
     📊 **MODE CSV/EXCEL KOTOR:**
     Rapikan file Excel/CSV (hasil *convert* aplikasi lain). 
     """)
-    st.info("⚡ **Update Penting:** Pembersih khusus untuk menghapus baris judul sisa (Volume, Satuan, Tarif Harga) yang bocor ke dalam data.")
+    st.info("⚡ **Sistem Dinamis:** Link portal sekarang dikelola otomatis melalui sistem Admin.")
+    
+    # --- MENAMPILKAN SEMUA LINK ---
+    st.divider()
+    st.markdown("### 🌐 Portal Aplikasi")
+    for nama_link, url_link in st.session_state.app_links.items():
+        st.link_button(f"🚀 {nama_link}", url_link, use_container_width=True)
+        
+    st.divider()
+    
+    # --- PORTAL ADMIN (KELOLA LINK) ---
+    with st.expander("⚙️ Portal Admin (Kelola Link)"):
+        # Anda bisa mengubah password "admin123" di bawah ini sesuai keinginan Anda
+        admin_pwd = st.text_input("Masukkan Password Admin", type="password")
+        if admin_pwd == "admin123":
+            st.success("Akses Diberikan!")
+            
+            st.markdown("**1. Tambah Link Baru**")
+            new_name = st.text_input("Nama Tombol (Contoh: Web Sekolah)")
+            new_url = st.text_input("Alamat URL (Harus pakai https://...)")
+            
+            if st.button("➕ Simpan Link", use_container_width=True):
+                if new_name and new_url:
+                    st.session_state.app_links[new_name] = new_url
+                    save_links(st.session_state.app_links)
+                    st.success(f"Link '{new_name}' tersimpan!")
+                    st.rerun()
+                else:
+                    st.error("Nama dan URL tidak boleh kosong.")
+            
+            st.markdown("---")
+            st.markdown("**2. Hapus Link Lama**")
+            link_to_delete = st.selectbox("Pilih link untuk dihapus", options=[""] + list(st.session_state.app_links.keys()))
+            if st.button("🗑️ Hapus Link", use_container_width=True):
+                if link_to_delete and link_to_delete in st.session_state.app_links:
+                    del st.session_state.app_links[link_to_delete]
+                    save_links(st.session_state.app_links)
+                    st.success(f"Link '{link_to_delete}' dihapus!")
+                    st.rerun()
+        elif admin_pwd:
+            st.error("Password Salah!")
 
 # ==========================================
-# 3. FUNGSI MERAPIKAN EXCEL (HYBRID CALCULATION)
+# 4. FUNGSI MERAPIKAN EXCEL (HYBRID CALCULATION)
 # ==========================================
 def create_styled_excel(cleaned_data):
     output = io.BytesIO()
@@ -146,7 +210,7 @@ def create_styled_excel(cleaned_data):
 
 
 # ==========================================
-# 4. KONTEN UTAMA (TABS)
+# 5. KONTEN UTAMA (TABS)
 # ==========================================
 st.markdown('<p class="main-title">Aplikasi Konverter BOSP 📊</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">Rapikan dan Luruskan Kertas Kerja RKAS yang berantakan dalam 1x klik.</p>', unsafe_allow_html=True)
@@ -179,15 +243,12 @@ with tab1:
                         
                         row_str_lower = " ".join(cells).lower()
                         
-                        # --- FILTER BARU ANTI-HILANG & PENGHANCUR HEADER (MODE PDF) ---
                         is_garbage = False
                         if any(kw in row_str_lower for kw in ["npsn", "nama sekolah", "alamat", "kabupaten", "provinsi", "sumber dana", "total penerimaan"]): 
                             is_garbage = True
                         if "kode rekening" in row_str_lower and "uraian" in row_str_lower: is_garbage = True
                         if "rincian perhitungan" in row_str_lower and "tarif harga" in row_str_lower: is_garbage = True
                         if str(cells[0]).lower().strip() in ["a. penerimaan", "b. belanja"]: is_garbage = True
-                        
-                        # Pemblokir baris sisa "Volume, Satuan, Tarif Harga"
                         if "volume" in row_str_lower and "tarif harga" in row_str_lower and "satuan" in row_str_lower: is_garbage = True
                         
                         if is_garbage: continue
@@ -283,13 +344,10 @@ with tab2:
                         if "kode rekening" in row_str_lower or "b. belanja" in row_str_lower: table_started = True
                         continue
                     
-                    # --- FILTER BARU ANTI-HILANG & PENGHANCUR HEADER (MODE CSV) ---
                     if "kode rekening" in str(r[1]).lower() or "kode rekening" in str(r[0]).lower(): continue
                     if "uraian" in str(r[3]).lower() or "rincian perhitungan" in str(r[3]).lower(): continue
                     if "no. urut" in str(r[0]).lower() or "b. belanja" in str(r[0]).lower(): continue
                     if "a. penerimaan" in str(r[0]).lower(): continue
-                    
-                    # Pemblokir mutlak untuk baris "Volume, Satuan, Tarif Harga"
                     if "volume" in row_str_lower and "tarif harga" in row_str_lower and "satuan" in row_str_lower: continue
                     
                     non_empty_r = [x for x in r if x]
