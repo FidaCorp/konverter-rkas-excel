@@ -35,10 +35,10 @@ with st.sidebar:
     📊 **MODE CSV/EXCEL KOTOR:**
     Rapikan file Excel/CSV (hasil *convert* aplikasi lain). 
     """)
-    st.info("⚡ **Super Akurat:** Menggunakan filter kekosongan mutlak ('<>') pada Total untuk memastikan tidak ada angka ganda yang ikut terhitung.")
+    st.info("⚡ **Hybrid Total:** Menghitung rincian barang secara statis (anti-blank) dan menggunakan rumus pintar di Grand Total.")
 
 # ==========================================
-# 3. FUNGSI MERAPIKAN EXCEL DENGAN FORMULA ANTI-GAGAL
+# 3. FUNGSI MERAPIKAN EXCEL (HYBRID CALCULATION)
 # ==========================================
 def create_styled_excel(cleaned_data):
     output = io.BytesIO()
@@ -70,12 +70,12 @@ def create_styled_excel(cleaned_data):
     
     for row_idx, row_data in enumerate(cleaned_data, start=3):
         is_grand_total = "jumlah" in str(row_data[3]).lower() or "jumlah" in str(row_data[0]).lower()
-        is_item = bool(str(row_data[1]).strip()) # Cek apakah punya Kode Rekening
+        is_item = bool(str(row_data[1]).strip()) 
         
         for col_idx, val_str in enumerate(row_data, start=1):
             val_bersih = str(val_str).replace('\n', ' ').strip()
             
-            # --- PEMUSNAH SPASI TERSEMBUNYI (Penting agar Excel ISBLANK = True) ---
+            # Bersihkan spasi gaib agar formula `<>` Excel bisa bekerja sempurna
             if not val_bersih:
                 cell = ws.cell(row=row_idx, column=col_idx, value=None)
             else:
@@ -102,21 +102,20 @@ def create_styled_excel(cleaned_data):
                 except:
                     pass
             
-            # --- INJEKSI FORMULA OTOMATIS ---
+            # --- INJEKSI TOTAL (HYBRID) ---
             if col_idx == 8:
                 if is_grand_total:
-                    # Rumus sakti: Menjumlahkan HANYA baris yang Kode Rekeningnya Tidak Kosong (<>)
+                    # Grand Total menggunakan Formula Excel Otomatis (Aman)
                     cell.value = f'=SUMIF(B3:B{row_idx-1}, "<>", H3:H{row_idx-1})'
                     cell.number_format = '#,##0'
                 elif is_item:
-                    # Pastikan E dan G benar-benar terdeteksi angka oleh mesin, cegah #VALUE!
+                    # Tiap barang dihitung manual oleh Python agar kebal "Protected View" & anti-blank
                     try:
                         val_e = ws.cell(row=row_idx, column=5).value
                         val_g = ws.cell(row=row_idx, column=7).value
                         if isinstance(val_e, (int, float)) and isinstance(val_g, (int, float)):
-                            cell.value = f"=E{row_idx}*G{row_idx}"
+                            cell.value = val_e * val_g
                         else:
-                            # Jika lump sum (tidak ada volume), taruh raw angkanya saja
                             n_str = val_bersih.replace('Rp', '').replace(' ', '').replace('.', '').replace(',', '.')
                             cell.value = float(n_str)
                     except:
@@ -128,7 +127,6 @@ def create_styled_excel(cleaned_data):
                             
                     cell.number_format = '#,##0'
                 
-            # Desain Cetak Tebal
             if not is_item and not is_grand_total:
                 cell.font = bold_font
                 
@@ -348,7 +346,7 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Tabel berhasil dirapikan! Formula Total terbaru telah siap. ({len(cleaned_csv_data)} baris)")
+                    st.success(f"✅ Tabel berhasil dirapikan! Metode Hybrid Total telah siap. ({len(cleaned_csv_data)} baris)")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
                     
