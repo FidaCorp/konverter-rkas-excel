@@ -52,18 +52,40 @@ if 'app_links' not in st.session_state:
 # ==========================================
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3135/3135692.png", width=80) 
-    st.title("Panduan Sistem")
-    st.markdown("""
-    Pilih jenis dokumen yang ingin Anda rapikan:
     
-    📄 **MODE PDF:** Ubah PDF langsung ke Excel.
-    📊 **MODE CSV:** Rapikan file CSV yang berantakan.
-    """)
+    # --- 1. TOMBOL PANDUAN (POP-UP) ---
+    with st.popover("📖 BACA PANDUAN SISTEM", use_container_width=True):
+        st.markdown("""
+        **Pilih jenis dokumen yang ingin Anda rapikan di halaman utama:**
+        
+        📄 **MODE PDF:** Ubah PDF Kertas Kerja BOSP langsung menjadi format Excel rapi.
+        
+        📊 **MODE CSV / EXCEL KOTOR:** Rapikan file Excel/CSV hasil *convert* dari aplikasi lain.
+        """)
+        st.info("⚡ **Info:** Total menggunakan sistem Hybrid yang dijamin presisi dan anti-error.")
+
+    # --- 2. RUANG TITIP & UNDUH FILE BEBAS ---
+    st.divider()
+    st.markdown("### 🗂️ Ruang Titip File")
+    st.caption("Upload file apa saja di sini untuk membuat link downloadnya.")
+    
+    titipan_file = st.file_uploader("Upload File Bebas", key="free_uploader", label_visibility="collapsed")
+    
+    if titipan_file is not None:
+        st.success(f"File '{titipan_file.name}' siap!")
+        st.download_button(
+            label="⬇️ DOWNLOAD FILE INI",
+            data=titipan_file.getvalue(),
+            file_name=titipan_file.name,
+            mime=titipan_file.type,
+            use_container_width=True,
+            type="secondary"
+        )
     
     # --- TEMPAT NAVIGASI UNDUHAN (Akan diisi di akhir proses) ---
     download_section = st.empty()
     
-    # --- MENAMPILKAN SEMUA LINK ---
+    # --- MENAMPILKAN SEMUA LINK (PORTAL APLIKASI) ---
     st.divider()
     st.markdown("### 🌐 Portal Aplikasi")
     for nama_link, url_link in st.session_state.app_links.items():
