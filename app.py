@@ -33,14 +33,13 @@ with st.sidebar:
     Ubah PDF Kertas Kerja BOSP langsung menjadi format Excel rapi.
     
     📊 **MODE CSV/EXCEL KOTOR:**
-    Rapikan file Excel/CSV (hasil *convert* aplikasi lain). Sistem ini menggunakan **Grid Ketat**, sehingga angka harga/volume tidak akan bercampur masuk ke kolom Uraian.
+    Rapikan file Excel/CSV (hasil *convert* aplikasi lain). Sistem ini dilengkapi pemulih otomatis jika Kode Program dirusak menjadi format tanggal oleh Excel.
     """)
 
 # ==========================================
 # 3. FUNGSI MERAPIKAN EXCEL (CORE FUNCTION)
 # ==========================================
 def create_styled_excel(cleaned_data):
-    """Fungsi standar untuk membuat desain Excel yang bagus"""
     output = io.BytesIO()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -75,13 +74,11 @@ def create_styled_excel(cleaned_data):
             cell.border = thin_border
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             
-            # Format Uang (.000)
             if col_idx in [7, 8] and val_bersih:
                 try:
                     cell.value = float(val_bersih.replace('.', '').replace(',', ''))
                     cell.number_format = '#,##0'
                 except: pass
-            # Format Volume
             elif col_idx in [5] and val_bersih:
                 try: cell.value = float(val_bersih.replace(',', '.'))
                 except: pass
@@ -94,7 +91,7 @@ def create_styled_excel(cleaned_data):
     
     ws.column_dimensions['A'].width = 6
     ws.column_dimensions['B'].width = 18
-    ws.column_dimensions['C'].width = 13
+    ws.column_dimensions['C'].width = 15
     ws.column_dimensions['D'].width = 50
     ws.column_dimensions['E'].width = 8
     ws.column_dimensions['F'].width = 14
@@ -232,24 +229,21 @@ with tab1:
             except Exception as e: st.error(f"Error pada sistem: {e}")
 
 # ------------------------------------------
-# TAB 2: MODE CSV / EXCEL KOTOR DENGAN SISTEM GRID KETAT
+# TAB 2: MODE CSV / EXCEL KOTOR DENGAN PEMULIH TANGGAL
 # ------------------------------------------
 with tab2:
     st.write("**Gunakan mode ini jika Anda sudah punya file CSV / Excel yang berantakan.**")
     uploaded_csv = st.file_uploader("📂 Upload File CSV atau Excel yang Kotor", type=["csv", "xlsx", "xls"], key="csv_uploader")
     
     if uploaded_csv is not None:
-        with st.spinner("⏳ Menata ulang kolom dengan Sistem Grid Ketat (Anti Campur)..."):
+        with st.spinner("⏳ Menata ulang kolom dan memulihkan kode yang dirusak format tanggal..."):
             try:
-                # Membaca file
                 if uploaded_csv.name.endswith('.csv'):
                     df_raw = pd.read_csv(uploaded_csv, header=None)
                 else:
                     df_raw = pd.read_excel(uploaded_csv, header=None)
                 
-                # Ubah semua jadi teks dan hapus nan
                 df_raw = df_raw.fillna("").astype(str)
-                
                 cleaned_csv_data = []
                 garbage_keywords = [
                     "rincian kertas kerja", "tahun anggaran", "npsn", "nama sekolah", 
@@ -261,31 +255,23 @@ with tab2:
                 table_started = False 
                 
                 for index, row in df_raw.iterrows():
-                    # Jadikan list murni sesuai indeks kolom (Grid Mutlak)
                     r = [str(x).replace('nan', '').replace('NaN', '').strip() for x in row.tolist()]
-                    
-                    # Pastikan minimal ada 8 kolom (padding) agar tidak error out of index
                     while len(r) < 8: r.append("")
                     
                     row_str_lower = " ".join(r).lower()
                     
-                    # 1. Lewati semua Kop Identitas Sekolah
                     if not table_started:
-                        if "kode rekening" in row_str_lower or "b. belanja" in row_str_lower:
-                            table_started = True
+                        if "kode rekening" in row_str_lower or "b. belanja" in row_str_lower: table_started = True
                         continue
                     
-                    # 2. Lewati pengulangan baris judul
                     if any(kw in row_str_lower for kw in garbage_keywords): continue
                     
-                    # 3. Lewati kolom tanda tangan
                     non_empty_r = [x for x in r if x]
                     if len(non_empty_r) == 1 and "jumlah" not in row_str_lower: continue
                     if len(non_empty_r) == 0: continue
                     
                     no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah = "", "", "", "", "", "", "", ""
                     
-                    # Jika ini baris total paling bawah
                     if "jumlah" in row_str_lower and len(non_empty_r) <= 3:
                         uraian = "Jumlah"
                         for c in reversed(r):
@@ -295,28 +281,49 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
                         continue
                     
-                    # --- PEMETAAN KOLOM GRID KETAT (Mencegah Angka Masuk Ke Uraian) ---
-                    # Karena di file Excel kolomnya sudah diatur, kita pakai langsung index kolomnya
                     no_urut = r[0]
                     kode_rek = r[1]
-                    kode_prog = r[2]
-                    uraian = r[3]  # <--- Ini kuncinya! Uraian PASTI dari kolom ke-4 di Excel asli Anda
                     
-                    # Ambil sisa teks setelah kolom uraian (di area volume & harga)
+                    # --- FITUR ANTI-TANGGAL EXCEL (PEMULIHAN KODE PROGRAM) ---
+                    kode_prog_mentah = r[2]
+                    
+                    # Jika terbaca format YYYY-MM-DD (contoh: 2026-03-03 atau 2004-08-05)
+                    m_date = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', kode_prog_mentah)
+                    if m_date:
+                        yyyy, mm, dd = m_date.groups()
+                        # Jika tahunnya baru (>=2024), berarti aslinya cuma 2 digit misal 03. 03.
+                        if int(yyyy) >= 2024:
+                            kode_prog = f"{dd}. {mm}."
+                        # Jika tahunnya lampau, berarti aslinya 3 digit misal 05. 08. 04.
+                        else:
+                            kode_prog = f"{dd}. {mm}. {yyyy[-2:]}."
+                    
+                    # Jika terbaca format DD/MM/YYYY
+                    elif re.match(r'^(\d{2})/(\d{2})/(\d{4})$', kode_prog_mentah):
+                        m_date2 = re.match(r'^(\d{2})/(\d{2})/(\d{4})$', kode_prog_mentah)
+                        p1, p2, yyyy = m_date2.groups()
+                        if int(yyyy) >= 2024:
+                            kode_prog = f"{p1}. {p2}."
+                        else:
+                            kode_prog = f"{p1}. {p2}. {yyyy[-2:]}."
+                    
+                    # Jika tidak dirusak Excel (Aman)
+                    else:
+                        kode_prog = kode_prog_mentah
+                    # ----------------------------------------------------------
+                    
+                    uraian = r[3]
                     rem = [x for x in r[4:] if x]
                     
-                    # Terkadang karena sedikit error export, Uraian tertulis di kolom ke-5
                     if not uraian and rem:
                         uraian = rem.pop(0)
                         
-                    if kode_rek: # Baris dengan Rincian Item (Beli barang/Honor)
+                    if kode_rek: 
                         if len(rem) >= 4:
-                            # Jika uraian kepanjangan sehingga tumpah ke kolom lain
                             if len(rem) > 4:
                                 uraian += " " + " ".join(rem[:-4])
                             volume, satuan, tarif, jumlah = rem[-4], rem[-3], rem[-2], rem[-1]
                         elif len(rem) == 3:
-                            # Vol & Satuan menempel misal "10 pack"
                             m = re.match(r'^([\d\.,]+)\s*(.*)$', rem[0])
                             if m:
                                 volume = m.group(1).strip()
@@ -328,10 +335,9 @@ with tab2:
                         elif len(rem) == 2:
                             tarif = rem[0]
                             jumlah = rem[1]
-                    else: # Baris Standar Kategori (Misal "Standar Proses")
+                    else: 
                         if len(rem) >= 1:
                             jumlah = rem[-1]
-                            # Jika ada sisa, lekatkan ke Uraian
                             if len(rem) > 1:
                                 uraian += " " + " ".join(rem[:-1])
                                 
@@ -339,7 +345,7 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Tabel berhasil dirapikan dengan sempurna! ({len(cleaned_csv_data)} baris)")
+                    st.success(f"✅ Tabel berhasil dirapikan dan kode tanggal otomatis dipulihkan! ({len(cleaned_csv_data)} baris)")
                     st.markdown("### 👀 Pratinjau Data CSV/Excel")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
