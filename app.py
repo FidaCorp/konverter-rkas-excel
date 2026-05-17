@@ -9,11 +9,15 @@ import json
 import os
 
 # ==========================================
-# 1. KONFIGURASI TAMPILAN HALAMAN & MEMORI
+# 1. KONFIGURASI TAMPILAN HALAMAN & PENYIMPANAN
 # ==========================================
 st.set_page_config(page_title="Konverter RKAS BOSP", page_icon="🏫", layout="wide")
 
-# Inisialisasi Memori untuk menyimpan file unduhan agar tidak hilang
+# Membuat folder fisik permanen jika belum ada
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
 if 'processed_excel' not in st.session_state:
     st.session_state.processed_excel = None
     st.session_state.processed_filename = ""
@@ -64,25 +68,39 @@ with st.sidebar:
         """)
         st.info("⚡ **Info:** Total menggunakan sistem Hybrid yang dijamin presisi dan anti-error.")
 
-    # --- 2. RUANG TITIP & UNDUH FILE BEBAS ---
+    # --- 2. RUANG TITIP FILE PERMANEN ---
     st.divider()
-    st.markdown("### 🗂️ Ruang Titip File")
-    st.caption("Upload file apa saja di sini untuk membuat link downloadnya.")
+    st.markdown("### 🗂️ Ruang Titip (Permanen)")
+    st.caption("Upload file pendukung di sini. File akan tersimpan selamanya.")
     
     titipan_file = st.file_uploader("Upload File Bebas", key="free_uploader", label_visibility="collapsed")
     
+    # Proses Menyimpan File Fisik
     if titipan_file is not None:
-        st.success(f"File '{titipan_file.name}' siap!")
-        st.download_button(
-            label="⬇️ DOWNLOAD FILE INI",
-            data=titipan_file.getvalue(),
-            file_name=titipan_file.name,
-            mime=titipan_file.type,
-            use_container_width=True,
-            type="secondary"
-        )
+        file_path = os.path.join(UPLOAD_DIR, titipan_file.name)
+        with open(file_path, "wb") as f:
+            f.write(titipan_file.getbuffer())
+        st.success(f"✅ '{titipan_file.name}' tersimpan permanen!")
+        
+    # Membaca isi folder fisik dan menampilkan tombol download
+    saved_files = os.listdir(UPLOAD_DIR)
+    if saved_files:
+        st.markdown("**📂 File Tersedia:**")
+        for file_name in saved_files:
+            file_path = os.path.join(UPLOAD_DIR, file_name)
+            with open(file_path, "rb") as f:
+                file_bytes = f.read()
+            st.download_button(
+                label=f"⬇️ {file_name}",
+                data=file_bytes,
+                file_name=file_name,
+                use_container_width=True,
+                key=f"dl_perm_{file_name}"
+            )
+    else:
+        st.info("Belum ada file yang dititipkan.")
     
-    # --- TEMPAT NAVIGASI UNDUHAN (Akan diisi di akhir proses) ---
+    # --- TEMPAT NAVIGASI UNDUHAN HASIL EXCEL ---
     download_section = st.empty()
     
     # --- MENAMPILKAN SEMUA LINK (PORTAL APLIKASI) ---
@@ -93,8 +111,8 @@ with st.sidebar:
         
     st.divider()
     
-    # --- PORTAL ADMIN (KELOLA LINK) ---
-    with st.expander("⚙️ Portal Admin (Kelola Link)"):
+    # --- PORTAL ADMIN (KELOLA LINK & FILE) ---
+    with st.expander("⚙️ Portal Admin (Kelola Link & File)"):
         admin_pwd = st.text_input("Masukkan Password Admin", type="password")
         if admin_pwd == "admin123":
             st.success("Akses Diberikan!")
@@ -120,6 +138,17 @@ with st.sidebar:
                     save_links(st.session_state.app_links)
                     st.success(f"Link '{link_to_delete}' dihapus!")
                     st.rerun()
+                    
+            st.markdown("---")
+            st.markdown("**3. Bersihkan File Permanen**")
+            file_to_delete = st.selectbox("Pilih file yang ingin dihapus dari server", options=[""] + os.listdir(UPLOAD_DIR))
+            if st.button("🧨 Hapus File Fisik", use_container_width=True):
+                if file_to_delete:
+                    path_to_delete = os.path.join(UPLOAD_DIR, file_to_delete)
+                    if os.path.exists(path_to_delete):
+                        os.remove(path_to_delete)
+                        st.success(f"File '{file_to_delete}' musnah!")
+                        st.rerun()
         elif admin_pwd:
             st.error("Password Salah!")
 
