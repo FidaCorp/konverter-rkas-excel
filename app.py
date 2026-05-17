@@ -35,10 +35,10 @@ with st.sidebar:
     📊 **MODE CSV/EXCEL KOTOR:**
     Rapikan file Excel/CSV (hasil *convert* aplikasi lain). 
     """)
-    st.info("⚡ **Super Akurat:** Formula Jumlah Otomatis kini menggunakan kuncian Kode Belanja ('5*') untuk mencegah perhitungan ganda pada baris judul yang memiliki spasi tersembunyi.")
+    st.info("⚡ **Super Akurat:** Menggunakan filter kekosongan mutlak ('<>') pada Total untuk memastikan tidak ada angka ganda yang ikut terhitung.")
 
 # ==========================================
-# 3. FUNGSI MERAPIKAN EXCEL DENGAN FORMULA "5*"
+# 3. FUNGSI MERAPIKAN EXCEL DENGAN FORMULA ANTI-GAGAL
 # ==========================================
 def create_styled_excel(cleaned_data):
     output = io.BytesIO()
@@ -70,15 +70,22 @@ def create_styled_excel(cleaned_data):
     
     for row_idx, row_data in enumerate(cleaned_data, start=3):
         is_grand_total = "jumlah" in str(row_data[3]).lower() or "jumlah" in str(row_data[0]).lower()
+        is_item = bool(str(row_data[1]).strip()) # Cek apakah punya Kode Rekening
         
         for col_idx, val_str in enumerate(row_data, start=1):
             val_bersih = str(val_str).replace('\n', ' ').strip()
-            cell = ws.cell(row=row_idx, column=col_idx, value=val_bersih)
+            
+            # --- PEMUSNAH SPASI TERSEMBUNYI (Penting agar Excel ISBLANK = True) ---
+            if not val_bersih:
+                cell = ws.cell(row=row_idx, column=col_idx, value=None)
+            else:
+                cell = ws.cell(row=row_idx, column=col_idx, value=val_bersih)
+                
             cell.border = thin_border
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             
-            # Pembaca Angka Cerdas
-            if col_idx in [5, 7, 8] and val_bersih:
+            # --- KONVERSI ANGKA MURNI ---
+            if val_bersih and col_idx in [5, 7, 8]:
                 try:
                     num_str = val_bersih.replace('Rp', '').replace(' ', '')
                     num_str = num_str.replace('.', '').replace(',', '.')
@@ -89,28 +96,40 @@ def create_styled_excel(cleaned_data):
                     elif col_idx == 7: 
                         cell.value = num_val
                         cell.number_format = '#,##0'
-                    elif col_idx == 8: 
-                        if is_grand_total:
-                            # FORMULA BARU: Hanya jumlahkan baris yang Kode Rekeningnya berawalan "5"
-                            cell.value = f'=SUMIF(B3:B{row_idx-1}, "5*", H3:H{row_idx-1})'
-                        elif row_data[1]: 
-                            if row_data[4] and row_data[6]:
-                                cell.value = f"=E{row_idx}*G{row_idx}"
-                            else:
-                                cell.value = num_val 
-                        else:
-                            cell.value = num_val
-                            
+                    elif col_idx == 8 and not is_grand_total and not is_item:
+                        cell.value = num_val
                         cell.number_format = '#,##0'
                 except:
                     pass
             
-            # Memastikan Baris Paling Bawah Pasti Mendapat Formula Akurat
-            if is_grand_total and col_idx == 8:
-                cell.value = f'=SUMIF(B3:B{row_idx-1}, "5*", H3:H{row_idx-1})'
-                cell.number_format = '#,##0'
+            # --- INJEKSI FORMULA OTOMATIS ---
+            if col_idx == 8:
+                if is_grand_total:
+                    # Rumus sakti: Menjumlahkan HANYA baris yang Kode Rekeningnya Tidak Kosong (<>)
+                    cell.value = f'=SUMIF(B3:B{row_idx-1}, "<>", H3:H{row_idx-1})'
+                    cell.number_format = '#,##0'
+                elif is_item:
+                    # Pastikan E dan G benar-benar terdeteksi angka oleh mesin, cegah #VALUE!
+                    try:
+                        val_e = ws.cell(row=row_idx, column=5).value
+                        val_g = ws.cell(row=row_idx, column=7).value
+                        if isinstance(val_e, (int, float)) and isinstance(val_g, (int, float)):
+                            cell.value = f"=E{row_idx}*G{row_idx}"
+                        else:
+                            # Jika lump sum (tidak ada volume), taruh raw angkanya saja
+                            n_str = val_bersih.replace('Rp', '').replace(' ', '').replace('.', '').replace(',', '.')
+                            cell.value = float(n_str)
+                    except:
+                        try:
+                            n_str = val_bersih.replace('Rp', '').replace(' ', '').replace('.', '').replace(',', '.')
+                            cell.value = float(n_str)
+                        except:
+                            cell.value = val_bersih
+                            
+                    cell.number_format = '#,##0'
                 
-            if not row_data[1] and row_data[0] != "Jumlah" and row_data[3].lower() != "jumlah":
+            # Desain Cetak Tebal
+            if not is_item and not is_grand_total:
                 cell.font = bold_font
                 
             if col_idx in [1, 2, 3, 5, 6]:
