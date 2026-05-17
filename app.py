@@ -29,13 +29,12 @@ with st.sidebar:
     st.markdown("""
     Pilih jenis dokumen yang ingin Anda rapikan:
     
-    📄 **MODE PDF (Rekomendasi):**
+    📄 **MODE PDF (Standar):**
     Ubah PDF Kertas Kerja BOSP langsung menjadi format Excel rapi.
     
     📊 **MODE CSV/EXCEL KOTOR:**
-    Rapikan file Excel/CSV (hasil *convert* aplikasi lain) yang tata letaknya bergeser dan berantakan.
+    Rapikan file Excel/CSV (hasil *convert* aplikasi lain) yang tata letaknya bergeser. Sistem akan otomatis membuang identitas sekolah dan tanda tangan, menyisakan tabel inti saja.
     """)
-    st.info("💡 **Tips:** Sistem akan otomatis menghapus teks Kop Surat yang berulang dan menyejajarkan kembali nilai tarif dan volumenya.")
 
 # ==========================================
 # 3. FUNGSI MERAPIKAN EXCEL (CORE FUNCTION)
@@ -122,7 +121,7 @@ st.markdown('<p class="sub-title">Rapikan dan Luruskan Kertas Kerja RKAS yang be
 tab1, tab2 = st.tabs(["📄 MODE PDF (Standar)", "📊 MODE CSV / EXCEL KOTOR"])
 
 # ------------------------------------------
-# TAB 1: MODE PDF LAMA (TIDAK ADA KODE YANG DIRUSAK/DIUBAH LOGIKANYA)
+# TAB 1: MODE PDF LAMA
 # ------------------------------------------
 with tab1:
     st.write("**Gunakan mode ini untuk mengunggah file Kertas Kerja berformat PDF.**")
@@ -154,6 +153,9 @@ with tab1:
                         
                         row_str_lower = " ".join(cells).lower()
                         if any(kw in row_str_lower for kw in garbage_keywords): continue
+                        
+                        # Buang teks tanda tangan nyasar
+                        if len(cells) == 1 and "jumlah" not in row_str_lower: continue
                         
                         no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah = "", "", "", "", "", "", "", ""
                         
@@ -232,14 +234,14 @@ with tab1:
             except Exception as e: st.error(f"Error pada sistem: {e}")
 
 # ------------------------------------------
-# TAB 2: MODE CSV / EXCEL KOTOR (BARU)
+# TAB 2: MODE CSV / EXCEL KOTOR (DIPERBARUI)
 # ------------------------------------------
 with tab2:
     st.write("**Gunakan mode ini jika Anda sudah punya file CSV / Excel yang berantakan (seperti hasil convert aplikasi lain).**")
     uploaded_csv = st.file_uploader("📂 Upload File CSV atau Excel yang Kotor", type=["csv", "xlsx", "xls"], key="csv_uploader")
     
     if uploaded_csv is not None:
-        with st.spinner("⏳ Menata ulang kolom CSV/Excel secara pintar..."):
+        with st.spinner("⏳ Menata ulang kolom dan membuang judul yang tidak perlu..."):
             try:
                 # Membaca File Apapun yang masuk
                 if uploaded_csv.name.endswith('.csv'):
@@ -255,17 +257,28 @@ with tab2:
                     "rincian kertas kerja", "tahun anggaran", "npsn", "nama sekolah", 
                     "alamat", "kabupaten", "provinsi", "bulan", "sumber dana", 
                     "penerimaan", "total penerimaan", "belanja", "kode rekening",
-                    "rincian perhitungan", "tarif harga", "no. urut", "kertas kerja perbulan", "kepala sekolah", "kec. besuk"
+                    "rincian perhitungan", "tarif harga", "no. urut", "kertas kerja perbulan"
                 ]
                 
-                # Menggunakan logika Anti-Bergeser yang sama seperti PDF, tapi untuk baris CSV
+                table_started = False # Saklar untuk melewati bagian kop identitas di atas
+                
                 for index, row in df_raw.iterrows():
-                    cells = [x.strip() for x in row.tolist() if x.strip() != ""]
+                    cells = [x.strip() for x in row.tolist() if x.strip() != "" and x.strip().lower() != "nan"]
                     if not cells: continue
                     
                     row_str_lower = " ".join(cells).lower()
                     
+                    # 1. TAHAP PEMBUANGAN JUDUL ATAS (Skip semuanya sampai ketemu tabel Belanja)
+                    if not table_started:
+                        if "kode rekening" in row_str_lower or "rincian perhitungan" in row_str_lower or "b. belanja" in row_str_lower:
+                            table_started = True
+                        continue # Langsung lanjut ke baris berikutnya
+                    
+                    # 2. TAHAP PEMBUANGAN HEADER BERULANG
                     if any(kw in row_str_lower for kw in garbage_keywords): continue
+                    
+                    # 3. TAHAP PEMBUANGAN TANDA TANGAN / TANGGAL DI BAWAH (Hanya 1 kolom tapi bukan "Jumlah")
+                    if len(cells) == 1 and "jumlah" not in row_str_lower: continue
                     
                     no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah = "", "", "", "", "", "", "", ""
                     
@@ -287,6 +300,12 @@ with tab2:
                         prog_parts.append(cells.pop(0))
                     if prog_parts: kode_prog = " ".join(prog_parts)
                     
+                    if cells and re.match(r'^((?:\d{2}\.\s*)+)\s*(.+)$', cells[0]):
+                        m = re.match(r'^((?:\d{2}\.\s*)+)\s*(.+)$', cells[0])
+                        kode_prog += (" " if kode_prog else "") + m.group(1).strip()
+                        if m.group(2).strip(): cells[0] = m.group(2).strip()
+                        else: cells.pop(0)
+                    
                     if not cells: continue
                     
                     if kode_rek:
@@ -297,7 +316,6 @@ with tab2:
                             tarif = cells[-2]
                             jumlah = cells[-1]
                         elif len(cells) == 4:
-                            # Jika Vol + Satuan menempel seperti "10 pack"
                             m = re.match(r'^([\d\.,]+)\s+([a-zA-Z\s/]+)$', cells[-3])
                             if m:
                                 uraian = " ".join(cells[:-3])
@@ -322,7 +340,7 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Data CSV/Excel berantakan berhasil diluruskan! ({len(cleaned_csv_data)} baris)")
+                    st.success(f"✅ Tabel berhasil dirapikan! Teks identitas & judul telah dibuang ({len(cleaned_csv_data)} baris tabel utama).")
                     st.markdown("### 👀 Pratinjau Data CSV/Excel")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
