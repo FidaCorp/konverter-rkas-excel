@@ -9,9 +9,9 @@ import json
 import os
 
 # ==========================================
-# 1. KONFIGURASI TAMPILAN HALAMAN & PENYIMPANAN
+# 1. KONFIGURASI HALAMAN & INJEKSI CSS MODERN
 # ==========================================
-st.set_page_config(page_title="Konverter RKAS BOSP", page_icon="🏫", layout="wide")
+st.set_page_config(page_title="RKAS BOSP Pro", page_icon="🚀", layout="wide")
 
 # Membuat folder fisik permanen jika belum ada
 UPLOAD_DIR = "uploads"
@@ -22,12 +22,80 @@ if 'processed_excel' not in st.session_state:
     st.session_state.processed_excel = None
     st.session_state.processed_filename = ""
 
+# --- SUNTIKAN CSS WEB MODERN (UI/UX UPGRADE) ---
 st.markdown("""
     <style>
-    .main-title { font-size: 2.8rem; font-weight: 800; color: #1E88E5; margin-bottom: 0rem; }
-    .sub-title { font-size: 1.2rem; color: #555555; margin-bottom: 2rem; }
-    .stTabs [data-baseweb="tab-list"] { gap: 2rem; }
-    .stTabs [data-baseweb="tab"] { height: 3rem; white-space: pre-wrap; font-size: 1.1rem; font-weight: bold; }
+    /* Mengubah font seluruh web */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Judul Utama dengan Gradasi Warna Keren */
+    .main-title { 
+        font-size: 3.5rem; 
+        font-weight: 900; 
+        background: -webkit-linear-gradient(45deg, #1E88E5, #D81B60);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        margin-bottom: 0.5rem;
+        padding-top: 1rem;
+    }
+    
+    /* Sub-judul yang elegan */
+    .sub-title { 
+        font-size: 1.2rem; 
+        color: #6c757d; 
+        text-align: center;
+        margin-bottom: 3rem;
+        font-weight: 400;
+    }
+    
+    /* Styling Area Upload (Dropzone) agar modern */
+    [data-testid="stFileUploadDropzone"] {
+        background-color: #f8f9fa;
+        border: 2px dashed #1E88E5;
+        border-radius: 15px;
+        padding: 2rem;
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    [data-testid="stFileUploadDropzone"]:hover {
+        background-color: #e3f2fd;
+        border-color: #D81B60;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(30, 136, 229, 0.15);
+    }
+    
+    /* Animasi Tombol Download / Primary */
+    .stButton > button {
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+    }
+    .stButton > button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important;
+    }
+    
+    /* Merapikan Tab */
+    .stTabs [data-baseweb="tab-list"] { 
+        gap: 2rem; 
+        justify-content: center;
+        margin-bottom: 2rem;
+    }
+    .stTabs [data-baseweb="tab"] { 
+        height: 3.5rem; 
+        font-size: 1.1rem; 
+        font-weight: 600; 
+        border-radius: 8px 8px 0 0;
+    }
+    
+    /* Sidebar Styling */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #f4f6f9 0%, #ffffff 100%);
+        border-right: 1px solid #e0e0e0;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -55,7 +123,12 @@ if 'app_links' not in st.session_state:
 # 3. SIDEBAR (PANEL KIRI)
 # ==========================================
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135692.png", width=80) 
+    # Memakai kolom agar gambar rapi di tengah
+    col_img1, col_img2, col_img3 = st.columns([1,2,1])
+    with col_img2:
+        st.image("https://cdn-icons-png.flaticon.com/512/3135/3135692.png", use_container_width=True) 
+    
+    st.markdown("<h2 style='text-align: center; color: #1E88E5;'>Navigasi Sistem</h2>", unsafe_allow_html=True)
     
     # --- 1. TOMBOL PANDUAN (POP-UP) ---
     with st.popover("📖 BACA PANDUAN SISTEM", use_container_width=True):
@@ -75,14 +148,12 @@ with st.sidebar:
     
     titipan_file = st.file_uploader("Upload File Bebas", key="free_uploader", label_visibility="collapsed")
     
-    # Proses Menyimpan File Fisik
     if titipan_file is not None:
         file_path = os.path.join(UPLOAD_DIR, titipan_file.name)
         with open(file_path, "wb") as f:
             f.write(titipan_file.getbuffer())
-        st.success(f"✅ '{titipan_file.name}' tersimpan permanen!")
+        st.success(f"✅ '{titipan_file.name}' tersimpan!")
         
-    # Membaca isi folder fisik dan menampilkan tombol download
     saved_files = os.listdir(UPLOAD_DIR)
     if saved_files:
         st.markdown("**📂 File Tersedia:**")
@@ -112,45 +183,43 @@ with st.sidebar:
     st.divider()
     
     # --- PORTAL ADMIN (KELOLA LINK & FILE) ---
-    with st.expander("⚙️ Portal Admin (Kelola Link & File)"):
-        admin_pwd = st.text_input("Masukkan Password Admin", type="password")
+    with st.expander("⚙️ Akses Admin (Link & File)"):
+        admin_pwd = st.text_input("Masukkan Password", type="password")
         if admin_pwd == "admin123":
-            st.success("Akses Diberikan!")
+            st.success("Akses Terbuka!")
             
             st.markdown("**1. Tambah Link Baru**")
-            new_name = st.text_input("Nama Tombol (Contoh: Web Sekolah)")
-            new_url = st.text_input("Alamat URL (Harus pakai https://...)")
+            new_name = st.text_input("Nama Tombol")
+            new_url = st.text_input("Alamat URL (https://...)")
             
             if st.button("➕ Simpan Link", use_container_width=True):
                 if new_name and new_url:
                     st.session_state.app_links[new_name] = new_url
                     save_links(st.session_state.app_links)
-                    st.success(f"Link '{new_name}' tersimpan!")
+                    st.success("Tersimpan!")
                     st.rerun()
-                else: st.error("Nama dan URL tidak boleh kosong.")
+                else: st.error("Tidak boleh kosong.")
             
             st.markdown("---")
             st.markdown("**2. Hapus Link Lama**")
-            link_to_delete = st.selectbox("Pilih link untuk dihapus", options=[""] + list(st.session_state.app_links.keys()))
+            link_to_delete = st.selectbox("Pilih link:", options=[""] + list(st.session_state.app_links.keys()))
             if st.button("🗑️ Hapus Link", use_container_width=True):
                 if link_to_delete and link_to_delete in st.session_state.app_links:
                     del st.session_state.app_links[link_to_delete]
                     save_links(st.session_state.app_links)
-                    st.success(f"Link '{link_to_delete}' dihapus!")
+                    st.success("Dihapus!")
                     st.rerun()
                     
             st.markdown("---")
-            st.markdown("**3. Bersihkan File Permanen**")
-            file_to_delete = st.selectbox("Pilih file yang ingin dihapus dari server", options=[""] + os.listdir(UPLOAD_DIR))
+            st.markdown("**3. Bersihkan File Server**")
+            file_to_delete = st.selectbox("Pilih file:", options=[""] + os.listdir(UPLOAD_DIR))
             if st.button("🧨 Hapus File Fisik", use_container_width=True):
                 if file_to_delete:
                     path_to_delete = os.path.join(UPLOAD_DIR, file_to_delete)
                     if os.path.exists(path_to_delete):
                         os.remove(path_to_delete)
-                        st.success(f"File '{file_to_delete}' musnah!")
+                        st.success("Musnah!")
                         st.rerun()
-        elif admin_pwd:
-            st.error("Password Salah!")
 
 # ==========================================
 # 4. FUNGSI MERAPIKAN EXCEL (HYBRID CALCULATION)
@@ -258,22 +327,22 @@ def create_styled_excel(cleaned_data):
 
 
 # ==========================================
-# 5. KONTEN UTAMA (TABS)
+# 5. KONTEN UTAMA (TABS & UI MODERN)
 # ==========================================
-st.markdown('<p class="main-title">Aplikasi Konverter BOSP 📊</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Rapikan dan Luruskan Kertas Kerja RKAS yang berantakan dalam 1x klik.</p>', unsafe_allow_html=True)
+st.markdown('<p class="main-title">Aplikasi Konverter BOSP ⚡</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title">Mesin Pintar Pengolah Kertas Kerja RKAS Menjadi Excel Sempurna</p>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📄 MODE PDF (Standar)", "📊 MODE CSV / EXCEL KOTOR"])
+tab1, tab2 = st.tabs(["📄 MODE PDF (Auto-Scan)", "📊 MODE CSV (Data Recovery)"])
 
 # ------------------------------------------
 # TAB 1: MODE PDF LAMA
 # ------------------------------------------
 with tab1:
-    st.write("**Gunakan mode ini untuk mengunggah file Kertas Kerja berformat PDF.**")
-    uploaded_pdf = st.file_uploader("📂 Upload File PDF Kertas Kerja", type="pdf", key="pdf_uploader")
+    st.markdown("<h4 style='text-align: center; color: #424242; margin-bottom: 20px;'>Seret & Lepas File Kertas Kerja (PDF) Anda Di Sini</h4>", unsafe_allow_html=True)
+    uploaded_pdf = st.file_uploader("", type="pdf", key="pdf_uploader", label_visibility="collapsed")
     
     if uploaded_pdf is not None:
-        with st.spinner("⏳ Membedah dokumen..."):
+        with st.spinner("⏳ Membedah dan Menganalisis Dokumen..."):
             try:
                 raw_rows = []
                 with pdfplumber.open(uploaded_pdf) as pdf:
@@ -283,7 +352,6 @@ with tab1:
                 
                 if raw_rows:
                     cleaned_data = []
-                    
                     for row in raw_rows:
                         if not row: continue
                         cells = [str(x).strip() for x in row if x is not None and str(x).strip() != ""]
@@ -357,14 +425,10 @@ with tab1:
                         df_preview = pd.DataFrame(cleaned_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                         st.dataframe(df_preview, use_container_width=True, height=350)
                         
-                        # Simpan ke Memori
                         st.session_state.processed_excel = create_styled_excel(cleaned_data)
                         st.session_state.processed_filename = "RKAS_BOSP_PDF_Rapi.xlsx"
                         
-                        st.divider()
-                        col1, col2, col3 = st.columns([1, 2, 1])
-                        with col2: 
-                            st.info("👈 File siap! Silakan klik tombol 'DOWNLOAD EXCEL FINAL' di Navigasi Kiri (Pusat Unduhan).")
+                        st.info("✨ Proses Selesai! File Excel Anda sudah siap diunggah. Silakan klik tombol Download di panel sebelah kiri.")
                     else: st.warning("Data tabel kosong.")
                 else: st.warning("Gagal membaca isi tabel pada PDF.")
             except Exception as e: st.error(f"Error pada sistem: {e}")
@@ -373,11 +437,11 @@ with tab1:
 # TAB 2: MODE CSV / EXCEL KOTOR
 # ------------------------------------------
 with tab2:
-    st.write("**Gunakan mode ini jika Anda sudah punya file CSV / Excel yang berantakan.**")
-    uploaded_csv = st.file_uploader("📂 Upload File CSV atau Excel yang Kotor", type=["csv", "xlsx", "xls"], key="csv_uploader")
+    st.markdown("<h4 style='text-align: center; color: #424242; margin-bottom: 20px;'>Unggah File CSV / Excel (XLSX) Kotor Anda Di Sini</h4>", unsafe_allow_html=True)
+    uploaded_csv = st.file_uploader("", type=["csv", "xlsx", "xls"], key="csv_uploader", label_visibility="collapsed")
     
     if uploaded_csv is not None:
-        with st.spinner("⏳ Menata ulang kolom dan menghancurkan judul sisa..."):
+        with st.spinner("⏳ Memperbaiki Format dan Menghancurkan Karakter Rusak..."):
             try:
                 if uploaded_csv.name.endswith('.csv'): df_raw = pd.read_csv(uploaded_csv, header=None)
                 else: df_raw = pd.read_excel(uploaded_csv, header=None)
@@ -454,18 +518,14 @@ with tab2:
                         cleaned_csv_data.append([no_urut, kode_rek, kode_prog, uraian, volume, satuan, tarif, jumlah])
 
                 if cleaned_csv_data:
-                    st.success(f"✅ Tabel berhasil dirapikan! Baris sisa judul telah dibersihkan. ({len(cleaned_csv_data)} baris)")
+                    st.success(f"✅ Data Terselamatkan! Total: {len(cleaned_csv_data)} baris.")
                     df_preview_csv = pd.DataFrame(cleaned_csv_data, columns=["No. Urut", "Kode Rekening", "Kode Program", "Uraian", "Volume", "Satuan", "Tarif Harga", "Jumlah"])
                     st.dataframe(df_preview_csv, use_container_width=True, height=350)
                     
-                    # Simpan ke Memori
                     st.session_state.processed_excel = create_styled_excel(cleaned_csv_data)
                     st.session_state.processed_filename = "RKAS_BOSP_Dari_CSV_Rapi.xlsx"
                     
-                    st.divider()
-                    col1, col2, col3 = st.columns([1, 2, 1])
-                    with col2: 
-                        st.info("👈 File siap! Silakan klik tombol 'DOWNLOAD EXCEL FINAL' di Navigasi Kiri (Pusat Unduhan).")
+                    st.info("✨ Proses Selesai! File Excel Anda sudah siap diunggah. Silakan klik tombol Download di panel sebelah kiri.")
                 else: st.warning("Gagal menyaring data. Pastikan format dokumennya mirip Kertas Kerja.")
             except Exception as e: st.error(f"Terjadi kesalahan saat memproses CSV/Excel: {e}")
 
@@ -473,10 +533,14 @@ with tab2:
 # 6. MENGISI PLACEHOLDER PUSAT UNDUHAN DI SIDEBAR
 # ==========================================
 with download_section.container():
-    st.divider()
-    st.markdown("### 📥 Pusat Unduhan")
     if st.session_state.get('processed_excel'):
-        st.success("🎉 File Excel sudah jadi!")
+        st.markdown(
+            """
+            <div style="background: -webkit-linear-gradient(45deg, #43a047, #1b5e20); padding: 15px; border-radius: 10px; color: white; text-align: center; margin-bottom: 10px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            🎉 EXCEL SUDAH JADI!
+            </div>
+            """, unsafe_allow_html=True
+        )
         st.download_button(
             label="⬇️ DOWNLOAD EXCEL FINAL",
             data=st.session_state.processed_excel,
@@ -485,5 +549,3 @@ with download_section.container():
             use_container_width=True,
             type="primary"
         )
-    else:
-        st.info("Upload dan proses dokumen untuk memunculkan tombol unduh di sini.")
